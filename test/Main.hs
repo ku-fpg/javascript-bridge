@@ -14,7 +14,7 @@ main = do
                ,   "<h1>Hello!</h1>"
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://localhost:3000/');"
-               ,     "jsb.onmessage = function(evt){ alert(evt.data);};"
+               ,     "jsb.onmessage = function(evt){ eval(evt.data);};"
                ,   "</script>"
                , "</body>"
                ]
@@ -22,7 +22,7 @@ main = do
 example :: JS.Engine -> IO ()
 example e = do
         print "Starting"
-        JS.sendCommand e (JS.Command "Hello World")
+        JS.sendCommand e (JS.Command "alert('Hello World!')")
         print "Done"
         return ()
         
