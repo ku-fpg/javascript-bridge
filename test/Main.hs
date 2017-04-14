@@ -6,7 +6,7 @@ import Web.Scotty
 
 main = do
         scotty 3000 $ do
-          middleware $ JS.start $ example
+          middleware $ JS.start print example
 
           get "/" $ do
             html $ mconcat
@@ -23,6 +23,8 @@ example :: JS.Engine -> IO ()
 example e = do
         print "Starting"
         JS.sendCommand e (JS.Command "alert('Hello World!')")
+        print "Hacking"
+        JS.hack e
         print "Done"
         return ()
         
