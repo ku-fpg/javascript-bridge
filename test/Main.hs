@@ -4,6 +4,7 @@
 import qualified Network.JavaScript as JS
 import Web.Scotty
 
+main :: IO ()
 main = do
         scotty 3000 $ do
           middleware $ JS.start print example
@@ -26,17 +27,17 @@ main = do
 
 example :: JS.Engine IO -> IO ()
 example e = do
-        print "Starting"
+        putStrLn "Starting"
         JS.send e (JS.command "console.log('Hello World!')")
-        print "Done command"        
+        putStrLn "Done command"
         v <- JS.send e (JS.procedure "1 + 1")
-        print ("Done procedure",v)
-        v <- JS.send e $ (,)
-          <$> JS.procedure "1 + 1"      
-          <*  JS.command "console.log(1)"
-          <*> JS.procedure "\"Hello\""
-          <*  JS.command "console.log(2)"
-        print ("Compound",v)
-        print "Done"
+        print ("Done procedure"::String,v)
+        v' <- JS.send e $ (,)
+           <$> JS.procedure "1 + 1"
+           <*  JS.command "console.log(1)"
+           <*> JS.procedure "\"Hello\""
+           <*  JS.command "console.log(2)"
+        print ("Compound"::String,v')
+        putStrLn "Done"
         return ()
-        
+
