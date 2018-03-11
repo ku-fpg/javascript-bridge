@@ -1,20 +1,39 @@
-{-# LANGUAGE OverloadedStrings,KindSignatures, GADTs #-}
+{-# LANGUAGE OverloadedStrings,KindSignatures, GADTs, ScopedTypeVariables #-}
 
 module Network.JavaScript where
-	
+        
 import Data.Monoid
+import Data.Foldable as F
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
-import Network.WebSockets as WS
---import Control.Applicative.Free
+import qualified Network.WebSockets as WS
+import Control.Monad.Trans.State
 
 import Control.Concurrent (forkIO)
+import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode')
-import qualified Data.HashMap.Strict as HM
+import qualified Data.IntMap.Strict as IM
 import Data.Scientific (toBoundedInteger)
+
+-- | Deep embedding of an applicative packet
+data Packet :: * -> * where
+  Pure      :: a       -> Packet a
+  Ap        ::            Packet (a -> b)
+                       -> Packet a
+                       -> Packet b
+  Command   :: LT.Text -> Packet ()
+  Procedure :: LT.Text -> Packet Value
+  Promise   :: LT.Text -> Packet Value
+
+instance Functor Packet where
+  fmap f m = Pure f `Ap` m
+
+instance Applicative Packet where
+  pure = Pure
+  (<*>) = Ap
 
 -- | This accepts WebSocket requests. 
 -- 
@@ -23,132 +42,138 @@ import Data.Scientific (toBoundedInteger)
 --     * Any client->server requests that are are an Object,
 --       with a tag called 'jsb', are used to denode procedural replies.
 
-start :: (Value -> IO ()) -> (Engine -> IO ()) -> Application -> Application
+start :: (Value -> IO ())
+      -> (Engine IO -> IO ())
+      -> Application -> Application
 start kV kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
-  replyMap <- newTVarIO HM.empty
-  forkIO $ forever $ do
-    d <- receiveData conn
+  nonceRef <- newTVarIO 0
+  replyMap <- newTVarIO IM.empty
+  let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
+  _ <- forkIO $ catchMe $ forever $ do
+    d <- WS.receiveData conn
     case decode' d of
-      Just j@(Object e) ->
-      	case HM.lookup "jsb" e of
-         Just (Number sci) -> 
-	   case toBoundedInteger sci of
-	     Just n -> atomically $ modifyTVar replyMap $ HM.insert n $ j
-	     Nothing -> return () -- ignore; this was a bad nonce / number.
-	 Just _ -> return () -- we discard all objects with a jsb tag.
-	 _   -> kV j      -- Objects
-      Just j -> kV j	  -- non-object, like array or numbers.
+      Just (Array v) -> case F.toList v of
+          (Number sci:replies) -> case toBoundedInteger sci of
+              Nothing -> return ()
+              Just n -> atomically
+                      $ modifyTVar replyMap
+                      $ IM.insert n
+                      $ replies
+          _ -> return ()  -- non number reply, or empty list
+      Just j -> kV j      -- non-array
       _      -> return () -- throw away bad (non-JSON) packet
-  kE $ Engine conn replyMap
 
--- 'Command' is a valid JavaScript expression.
-newtype Command = Command LT.Text
+  kE $ Engine 
+     { sendText = WS.sendTextData conn
+     , genNonce = atomically $ do
+         n <- readTVar nonceRef
+         writeTVar nonceRef $ succ n
+         return n
+     , replyBox = \ n -> atomically $ do
+         t <- readTVar replyMap
+         case IM.lookup n t of
+           Nothing -> retry
+           Just v -> return v
+     }
 
-command :: LT.Text -> Command
+-- | An 'Engine' is a handle to a specific JavaScript engine
+data Engine m = Engine
+  { sendText :: LT.Text -> m ()      -- send text to the JS engine
+  , genNonce ::            m Int     -- nonce generator
+  , replyBox :: Int     -> m [Value] -- reply mailbox
+  }
+        
+command :: LT.Text -> Packet ()
 command = Command
 
-instance Monoid Command where
-  mempty                        = Command mempty		-- undefined
-  Command a `mappend` Command b = Command (a `mappend` b)	-- [A,B][1]
-
-sendCommand :: Engine -> Command -> IO ()
-sendCommand (Engine conn _) (Command txt) = WS.sendTextData conn txt
-
-{-
-   var x = f(..)
-   jsb.send(JSON.stringify(x));
-OR   
-   g(function(x) { jsb.send(JSON.stringify(x)); });
-
- -}
-
-data Promise :: * -> * where
-  Promise    :: (Value -> a) -> LT.Text -> Promise a
-  Now        :: a            -> LT.Text -> Promise a
-  Pure       :: a                       -> Promise a
-
-instance Applicative Promise where
-  pure = Pure
-  -- There are 9 possible ways of building a compound promise.
---  Promise f1 t1  <*> m = 
---  Now t1         <*> m = 
-  Promise k1 t1  <*> Promise k2 t2 = Promise (\ v -> k1 v (k2 v)) $ ("Promise.all([" <> t1 <> "," <> t2 <> "])")
-  Promise k t1   <*> Now v t2    = Promise (flip k v) $ ("[" <> t1 <> "," <> t2 <> "][0]")
-  Promise k t1   <*> Pure x      = Promise (flip k x) t1
-  Now v t1       <*> Promise k t2  = Promise (v . k) ("[" <> t1 <> "," <> t2 <> "][1]")
-  Now v1 t1      <*> Now v2 t2   = Now (v1 v2) ("[" <> t1 <> "," <> t2 <> "][1]") -- could return either, or undefined
-  Now v t        <*> Pure x      = Now (v x) t
-  Pure f         <*> Promise k t = Promise (f . k) t
-  Pure f         <*> Now v t     = Now (f v) t
-  Pure f         <*> Pure x      = Pure (f x)
-
-instance Functor Promise where
-  fmap f m = pure f <*> m
-
-{-
-sendPromise :: Engine -> Promise a -> IO a
-sendPromise (Engine conn _) p = 
-  where f (Promise a) = (
--}   
-
-
-data Procedure :: * -> * where
-  Procedure :: LT.Text                           -> Procedure Value --- expression to return.
-  Context   :: LT.Text -> Procedure a -> LT.Text -> Procedure a     --- wrapper, typically involing a callback
-
-procedure :: LT.Text -> Procedure Value
+procedure :: LT.Text -> Packet Value
 procedure = Procedure
 
-context :: LT.Text -> Procedure a -> LT.Text -> Procedure a
-context = Context
+promise :: LT.Text -> Packet Value
+promise = Promise
 
-sendProcedure :: Engine -> Procedure a -> IO a
-sendProcedure (Engine conn _) proc = do return undefined
-{-
-	let scribe (Procedure p) = "merge
-	    txts = scribe proc
-	WS.sendTextData conn txt
--}
-----------------------------------------
+send :: Monad m => Engine m -> Packet a -> m a
+send engine ps
+   | null assignments
+      = do sendText engine $ serialize stmts
+           return $ evalState (patchReplies ps) []
+   | otherwise = do
+        nonce <- genNonce engine
+        sendText engine $ serialize (reply nonce : stmts)
+        replies <- replyBox engine nonce
+        return $ evalState (patchReplies ps) replies
+  where
+    (_,(_,stmts)) = runState (genPacket ps) (0,[])
 
-data Engine = Engine 
-	WS.Connection
-	(TVar (HM.HashMap Int Value))
+    serialize :: [PacketStmt] ->LT.Text
+    serialize = LT.concat . map showStmt . reverse
 
-{-
--- Returns true 
-newtype Callback = Callback (forall a . FromJSON a => a -> IO Bool))
+    assignments :: [PacketStmt]
+    assignments = reverse $ filter isAssignment stmts
 
--}
+    -- generate the packet to be sent
+    genPacket :: Packet a -> State (Int,[PacketStmt]) ()
+    genPacket Pure{}           = return ()
+    genPacket (Ap g h)         = genPacket g *> genPacket h
+    genPacket (Command stmt)   =
+        modify $ \ (n,ss) -> (n,CommandStmt stmt : ss)
+    genPacket (Procedure stmt) = 
+        modify $ \ (n,ss) -> (n+1,ProcedureStmt n stmt : ss)
+    genPacket (Promise stmt)   = 
+        modify $ \ (n,ss) -> (n+1,PromiseStmt n stmt : ss)
 
-hack :: Engine -> IO ()
-hack (Engine c m) = do
-	d <- receiveData c
-	print (d :: LT.Text)
-	
+    -- generate the call to reply (as a final command)
+    reply :: Int -> PacketStmt
+    reply n = promiseWrapper
+            $ CommandStmt
+            $ "reply(" <> LT.pack (show n) <> ",["
+       <> LT.intercalate ","
+          [ case a of
+              CommandStmt{} -> error "found command"
+              (ProcedureStmt i _) -> procVar i
+              (PromiseStmt i _)   -> "p[" <> LT.pack (show i) <> "]"
+          | a <- assignments ]
+       <> "])"
 
--- newtype Fragement = Fragment 
+    promises :: [Int]
+    promises = [ n | PromiseStmt n _ <- stmts ]
 
-data Primitive :: * -> * where
-  Command' :: LT.Text -> Primitive ()
-  Procedure' :: LT.Text -> Primitive Value
-  Promise'   :: LT.Text -> Primitive Value
-  Allocator' :: LT.Text -> Primitive Index
+    promiseWrapper rep
+       | null promises = rep
+       | otherwise = error "promises not supported (yet)"
 
---type Packet = Ap Primitive
+    patchReplies :: Packet a -> State [Value] a
+    patchReplies (Pure a)    = return a
+    patchReplies (Ap g h)    = patchReplies g <*> patchReplies h
+    patchReplies Command{}   = return ()
+    patchReplies Procedure{} = popState
+    patchReplies Promise{}   = popState
 
---putText :: LT.Text -> PtkOut
---alloc
-{-
-packet :: Packet a -> Int -> Int -> [LT.Text]
-packet (Pure _)              _ _ = []
-packet (Ap (Command' t) r)   x y = t : packet r x y
-packet (Ap (Procedure' t) r) x y = ("var v" <> show' x <> "=" <> t) : packet r (x+1) y
-packet (Ap (Allocator' t) r) x y = ("jsb.alloc[" <> show' x <> "]=" <> t) : packet r x (y+1)
--}
-show' :: Int -> LT.Text
-show' n = LT.pack (show n)
+    popState :: State [Value] Value
+    popState = state $ \ vs -> case vs of
+                 [] -> error "run out of result arguments"
+                 (v:vs') -> (v,vs')
+                     
+data PacketStmt
+   = CommandStmt       LT.Text
+   | ProcedureStmt Int LT.Text
+   | PromiseStmt   Int LT.Text
+ deriving Show
 
-newtype Index = Index Int
+showStmt :: PacketStmt -> LT.Text
+showStmt (CommandStmt cmd)     = cmd <> ";"
+showStmt (ProcedureStmt n cmd) = procVar n <> "=" <> cmd <> ";"
+showStmt (PromiseStmt n cmd)   = promVar n <> "=" <> cmd <> ";"
+
+procVar :: Int -> LT.Text
+procVar n = "v" <> LT.pack (show n)
+
+promVar :: Int -> LT.Text
+promVar n = "p" <> LT.pack (show n)
+
+isAssignment :: PacketStmt -> Bool
+isAssignment CommandStmt{}   = False
+isAssignment ProcedureStmt{} = True
+isAssignment PromiseStmt{}   = True
   
