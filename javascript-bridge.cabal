@@ -3,8 +3,8 @@
 
 name:                javascript-bridge
 version:             0.1
-synopsis:            Bridge from Haskell to JavaScript on the browser
-description:         Remote Monad for JavaScript on the browser
+synopsis:            Remote Monad for JavaScript on the browser
+description:         Bridge from Haskell to JavaScript on the browser
 license:             BSD3
 license-file:        LICENSE
 author:              Andy Gill
@@ -12,8 +12,12 @@ maintainer:          andygill@ku.edu
 copyright:           Copyright (c) 2016 The University of Kansas
 category:            Network
 build-type:          Simple
-extra-source-files:  README.md
+extra-source-files:  CHANGELOG.md, README.md
 cabal-version:       >=1.10
+tested-with:         GHC == 7.10.3
+                   , GHC == 8.0.2
+                   , GHC == 8.2.2
+                   , GHC == 8.4.1
 
 source-repository head
   type:                git
