@@ -38,7 +38,7 @@ test-suite javascript-bridge-test
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   build-depends:       base              >= 4.8 && < 4.11
-                     , javascript-bridge == 0.1
+                     , javascript-bridge
                      , scotty            == 0.11.*
   hs-source-dirs:      test
   default-language:    Haskell2010
