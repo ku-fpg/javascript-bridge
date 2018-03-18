@@ -41,14 +41,16 @@ instance Applicative Packet where
 --     * All client->server requests are of type 'Value'.
 --     * Any client->server requests that are are an Object,
 --       with a tag called 'jsb', are used to denode procedural replies.
+--
+-- listeners are added using the 'Engine IO' handle
 
-start :: (Value -> IO ())
-      -> (Engine IO -> IO ())
+start :: (Engine IO -> IO ())
       -> Application -> Application
-start kV kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
+start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
   nonceRef <- newTVarIO 0
   replyMap <- newTVarIO IM.empty
+  listenerRef <- newTVarIO $ \ _ -> return ()
   let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
   _ <- forkIO $ catchMe $ forever $ do
     d <- WS.receiveData conn
@@ -61,7 +63,8 @@ start kV kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                       $ IM.insert n
                       $ replies
           _ -> return ()  -- non number reply, or empty list
-      Just j -> kV j      -- non-array
+      Just j -> do kV <- atomically $ readTVar listenerRef
+                   kV j      -- non-array
       _      -> return () -- throw away bad (non-JSON) packet
 
   kE $ Engine 
@@ -75,6 +78,7 @@ start kV kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
          case IM.lookup n t of
            Nothing -> retry
            Just v -> return v
+     , listener = listenerRef
      }
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
@@ -82,8 +86,12 @@ data Engine m = Engine
   { sendText :: LT.Text -> m ()      -- send text to the JS engine
   , genNonce ::            m Int     -- nonce generator
   , replyBox :: Int     -> m [Value] -- reply mailbox
+  , listener :: TVar (Value -> IO ()) -- listener(s)
   }
-        
+
+addListener :: Engine IO -> (Value -> IO ()) -> IO ()
+addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
+              
 command :: LT.Text -> Packet ()
 command = Command
 
