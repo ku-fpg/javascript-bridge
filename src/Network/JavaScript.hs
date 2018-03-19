@@ -101,8 +101,8 @@ procedure = Procedure
 promise :: LT.Text -> Packet Value
 promise = Promise
 
-send :: Monad m => Engine m -> Packet a -> m a
-send engine ps
+send :: (Packetize p, Monad m) => Engine m -> p a -> m a
+send engine p
    | null assignments
       = do sendText engine $ serialize stmts
            return $ evalState (patchReplies ps) []
@@ -112,6 +112,8 @@ send engine ps
         replies <- replyBox engine nonce
         return $ evalState (patchReplies ps) replies
   where
+    ps = packetize p
+
     (_,(_,stmts)) = runState (genPacket ps) (0,[])
 
     serialize :: [PacketStmt] ->LT.Text
@@ -185,3 +187,10 @@ isAssignment CommandStmt{}   = False
 isAssignment ProcedureStmt{} = True
 isAssignment PromiseStmt{}   = True
   
+------------------------------------------------------------------------------
+
+class Packetize p where
+  packetize :: p a -> Packet a
+
+instance Packetize Packet where
+  packetize = id
