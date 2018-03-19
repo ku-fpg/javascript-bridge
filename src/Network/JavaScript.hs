@@ -26,7 +26,6 @@ data Packet :: * -> * where
                        -> Packet b
   Command   :: LT.Text -> Packet ()
   Procedure :: LT.Text -> Packet Value
-  Promise   :: LT.Text -> Packet Value
 
 instance Functor Packet where
   fmap f m = Pure f `Ap` m
@@ -98,9 +97,6 @@ command = Command
 procedure :: LT.Text -> Packet Value
 procedure = Procedure
 
-promise :: LT.Text -> Packet Value
-promise = Promise
-
 send :: (Packetize p, Monad m) => Engine m -> p a -> m a
 send engine p
    | null assignments
@@ -119,8 +115,13 @@ send engine p
     serialize :: [PacketStmt] ->LT.Text
     serialize = LT.concat . map showStmt . reverse
 
-    assignments :: [PacketStmt]
-    assignments = reverse $ filter isAssignment stmts
+    assignments :: [LT.Text]
+    assignments = [ v
+                  | a <- reverse stmts
+                  , v <- case a of
+                      CommandStmt{}     -> []
+                      ProcedureStmt i _ -> [procVar i]
+                  ]
 
     -- generate the packet to be sent
     genPacket :: Packet a -> State (Int,[PacketStmt]) ()
@@ -130,35 +131,20 @@ send engine p
         modify $ \ (n,ss) -> (n,CommandStmt stmt : ss)
     genPacket (Procedure stmt) = 
         modify $ \ (n,ss) -> (n+1,ProcedureStmt n stmt : ss)
-    genPacket (Promise stmt)   = 
-        modify $ \ (n,ss) -> (n+1,PromiseStmt n stmt : ss)
 
     -- generate the call to reply (as a final command)
     reply :: Int -> PacketStmt
-    reply n = promiseWrapper
-            $ CommandStmt
-            $ "reply(" <> LT.pack (show n) <> ",["
-       <> LT.intercalate ","
-          [ case a of
-              CommandStmt{} -> error "found command"
-              (ProcedureStmt i _) -> procVar i
-              (PromiseStmt i _)   -> "p[" <> LT.pack (show i) <> "]"
-          | a <- assignments ]
-       <> "])"
-
-    promises :: [Int]
-    promises = [ n | PromiseStmt n _ <- stmts ]
-
-    promiseWrapper rep
-       | null promises = rep
-       | otherwise = error "promises not supported (yet)"
+    reply n = CommandStmt
+            $ "reply(" <> LT.intercalate ","
+                           [ LT.pack (show n)
+                           , "[" <> LT.intercalate "," assignments <> "]"
+                           ] <> ")"
 
     patchReplies :: Packet a -> State [Value] a
     patchReplies (Pure a)    = return a
     patchReplies (Ap g h)    = patchReplies g <*> patchReplies h
     patchReplies Command{}   = return ()
     patchReplies Procedure{} = popState
-    patchReplies Promise{}   = popState
 
     popState :: State [Value] Value
     popState = state $ \ vs -> case vs of
@@ -168,25 +154,15 @@ send engine p
 data PacketStmt
    = CommandStmt       LT.Text
    | ProcedureStmt Int LT.Text
-   | PromiseStmt   Int LT.Text
  deriving Show
 
 showStmt :: PacketStmt -> LT.Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
-showStmt (ProcedureStmt n cmd) = procVar n <> "=" <> cmd <> ";"
-showStmt (PromiseStmt n cmd)   = promVar n <> "=" <> cmd <> ";"
+showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
 
 procVar :: Int -> LT.Text
 procVar n = "v" <> LT.pack (show n)
 
-promVar :: Int -> LT.Text
-promVar n = "p" <> LT.pack (show n)
-
-isAssignment :: PacketStmt -> Bool
-isAssignment CommandStmt{}   = False
-isAssignment ProcedureStmt{} = True
-isAssignment PromiseStmt{}   = True
-  
 ------------------------------------------------------------------------------
 
 class Packetize p where
