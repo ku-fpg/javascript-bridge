@@ -64,7 +64,8 @@ assert e (Error er) _ = do
   exitFailure
 assert e (Success n) g
    | n == g = do
-       write e $ "<ul><li>result parsed as " ++ show n ++ ", and is correct</li></ul>"       
+       write e $ "<ul><li>result parsed as " ++ show n ++ ", and is correct</li></ul>"
+       scroll e "cursor"
    | otherwise = do
        write e $ "<ul><li><span style='color: red'>unexpected result : '" ++ show n ++ "'</span></li></ul>"
        exitFailure
@@ -75,7 +76,6 @@ example e = do
 
         -- First test of send command
         writeTo e "send-command" "send $ command ... works"
-
         scroll e "cursor"
 
         -- We assume send command works; and test procedures
@@ -95,8 +95,6 @@ example e = do
 
         assert e (fromJSON v3) [True,False]
 
-        scroll e "cursor"
-        
         write e "<h3>Sending Combine Commands</h3>"
         JS.send e $ 
              jsWriteTo "cursor" "<ul id='combine-commands'></ul>" 
@@ -117,7 +115,6 @@ example e = do
           <* jsWriteTo "combine-procs" "<li>'True'</li>"
   
         assert e v4 (2,"Hello",True)
-        scroll e "cursor"
 
         write e "<h3>Sending Combine Commands and Procedures</h3>"
 
@@ -132,7 +129,6 @@ example e = do
           <* jsWriteTo "combine-comms-procs" "<li>.. and 5 commands ...</li>"
           
         assert e v5 (2,"Hello",True)
-        scroll e "cursor"
 
         write e "<h3>Single Promise</h3>"
 
@@ -142,8 +138,6 @@ example e = do
 
         assert e v6 "Hello"
 
-        scroll e "cursor"
-
         write e "<h3>Promises</h3>"
 
         v7 :: Result (String,String) <- JS.send e $ liftA2 (,)
@@ -151,8 +145,6 @@ example e = do
              <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('World') })")
 
         assert e v7 ("Hello","World")
-
-        scroll e "cursor"
 
         write e "<h3>Sending Combine Commands and Procedures and Promises</h3>"
 
@@ -168,3 +160,8 @@ example e = do
 
         assert e v8 (2,"World",True)
 
+        scroll e "cursor"
+
+        -- First test of send command
+        write e "<h2>All Tests Pass</h2>"
+        scroll e "cursor"
