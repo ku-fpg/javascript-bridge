@@ -2,6 +2,8 @@
 
 
 import Control.Applicative
+import Control.Concurrent
+import Control.Concurrent.MVar
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -9,10 +11,14 @@ import qualified Network.JavaScript as JS
 import System.Exit
 import Web.Scotty
 
+
+
 main :: IO ()
 main = do
-        scotty 3000 $ do
-          middleware $ JS.start example
+        lock <- newEmptyMVar
+
+        _ <- forkIO $ scotty 3000 $ do
+          middleware $ JS.start $ \ e -> example e >> putMVar lock ()
 
           get "/" $ do
             html $ mconcat
@@ -36,6 +42,7 @@ main = do
                , "</body>"
                ]
 
+        takeMVar lock
 
 
 write :: JS.Engine IO -> String -> IO ()
