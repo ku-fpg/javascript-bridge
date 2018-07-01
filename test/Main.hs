@@ -3,7 +3,6 @@
 
 import Control.Applicative
 import Control.Concurrent
-import Control.Concurrent.MVar
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
