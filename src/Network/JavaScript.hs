@@ -48,6 +48,9 @@ start :: (Engine IO -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
+  -- Bootstrap the remote handler
+  WS.sendTextData conn bootstrap
+  -- Handling packets
   nonceRef <- newTVarIO 0
   replyMap <- newTVarIO IM.empty
   listenerRef <- newTVarIO $ \ _ -> return ()
@@ -91,6 +94,28 @@ data Engine m = Engine
   , replyBox :: Int     -> m (Either Value [Value]) -- reply mailbox
   , listener :: TVar (Value -> IO ()) -- listener(s)
   }
+
+
+bootstrap :: LT.Text
+bootstrap =   LT.unlines
+   [     "jsb.onmessage = function(evt){ "
+   ,     "   var error = function(n,err) {"
+   ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, error: err}));"
+   ,     "         throw(err);"
+   ,     "   };"
+   ,     "   var reply = function(n,obj) {"
+   ,     "       Promise.all(obj).then(function(obj){"
+   ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, result: obj}));"
+   ,     "       }).catch(function(err){"
+   ,     "         error(n,err);"
+   ,     "       });"
+   ,     "   };"
+   ,     "   if (true || debug) { console.log('eval',evt.data); }"
+   ,     "      eval('(function(){' + evt.data + '})()');"
+   ,     "};"
+   ]
+
+
 
 addListener :: Engine IO -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
