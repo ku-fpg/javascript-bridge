@@ -3,6 +3,7 @@
 
 import Control.Applicative
 import Control.Concurrent
+import qualified Control.Exception as E
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -29,13 +30,19 @@ main = do
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://' + location.host + '/');"
                ,     "jsb.onmessage = function(evt){ "
+               ,     "   var error = function(n,err) {"
+               ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, error: err}));"
+               ,     "         throw(err);"
+               ,     "   };"
                ,     "   var reply = function(n,obj) {"
                ,     "       Promise.all(obj).then(function(obj){"
                ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, result: obj}));"
+               ,     "       }).catch(function(err){"
+               ,     "         error(n,err);"
                ,     "       });"
                ,     "   };"
                ,     "   if (true || debug) { console.log('eval',evt.data); }"
-               ,     "   eval('(function(){' + evt.data + '})()');"
+               ,     "      eval('(function(){' + evt.data + '})()');"
                ,     "};"
                ,   "</script>"
                , "</body>"
@@ -159,8 +166,18 @@ example e = do
 
         assert e v8 (2,"World",True)
 
+        write e "<h3>Exceptions</h3>"
+        JS.send e $ JS.command $ "throw 'Command Fail';"
+        write e "<ul><li>send $ command (throw ..) sent (result ignored)</li></ul>"
+        r :: Either JS.JavaScriptException Value <- E.try $ JS.send e $ JS.procedure $ "(function(){throw 'Procedure Fail'})();"
         scroll e "cursor"
+        write e "<ul><li>send $ procedure (throw ..) sent</li></ul>"
+        case r of
+          Right _ -> do
+            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left (JS.JavaScriptException v) -> assert e (fromJSON v) ("Procedure Fail" :: String)
 
-        -- First test of send command
+            -- First test of send command
         write e "<h2>All Tests Pass</h2>"
         scroll e "cursor"
