@@ -31,7 +31,7 @@ main = do
                ,     "jsb.onmessage = function(evt){ "
                ,     "   var reply = function(n,obj) {"
                ,     "       Promise.all(obj).then(function(obj){"
-               ,     "         jsb.send(JSON.stringify([n].concat(obj)));"
+               ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, result: obj}));"
                ,     "       });"
                ,     "   };"
                ,     "   if (true || debug) { console.log('eval',evt.data); }"

@@ -2,8 +2,8 @@
 
 module Network.JavaScript where
         
+import Control.Applicative((<|>))
 import Data.Monoid
-import Data.Foldable as F
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
@@ -14,9 +14,8 @@ import Control.Concurrent (forkIO)
 import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
-import Data.Aeson (Value(..), decode')
+import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
-import Data.Scientific (toBoundedInteger)
 
 -- | Deep embedding of an applicative packet
 data Packet :: * -> * where
@@ -54,16 +53,14 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   _ <- forkIO $ catchMe $ forever $ do
     d <- WS.receiveData conn
     case decode' d of
-      Just (Array v) -> case F.toList v of
-          (Number sci:replies) -> case toBoundedInteger sci of
-              Nothing -> return ()
-              Just n -> atomically
+      Just (Result _ []) -> error "got Result with no results"
+      Just (Result n replies) -> atomically
                       $ modifyTVar replyMap
                       $ IM.insert n
                       $ replies
-          _ -> return ()  -- non number reply, or empty list
-      Just j -> do kV <- atomically $ readTVar listenerRef
-                   kV j      -- non-array
+      Just (Error _ _) -> error "got Error"
+      Just (Event event) -> do kV <- atomically $ readTVar listenerRef
+                               kV event
       _      -> return () -- throw away bad (non-JSON) packet
 
   kE $ Engine 
@@ -170,3 +167,21 @@ class Packetize p where
 
 instance Packetize Packet where
   packetize = id
+
+data Reply = Result Int [Value]
+           | Error Int Value
+           | Event Value
+  deriving Show
+
+instance FromJSON Reply where
+  parseJSON o =  parseResult o
+             <|> parseError o
+             <|> pure (Event o)
+    where
+      parseResult = withObject "Result" $ \v -> Result
+        <$> v .: "id"
+        <*> v .: "result"
+      parseError = withObject "Error" $ \v -> Error
+        <$> v .: "id"
+        <*> v .: "error"
+
