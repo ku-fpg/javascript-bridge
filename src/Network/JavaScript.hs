@@ -4,6 +4,7 @@ module Network.JavaScript
   ( Packet
   , Packetize(..)
   , send
+  , sendE
   , command
   , procedure
   , start
@@ -150,17 +151,24 @@ procedure :: LT.Text -> Packet Value
 procedure = Procedure
 
 send :: Packetize p => Engine IO -> p a -> IO a
-send engine p
+send e p = do
+  r <- sendE e p
+  case r of
+    Right a -> return a
+    Left err -> throwIO $ JavaScriptException err
+
+sendE :: Packetize p => Engine IO -> p a -> IO (Either Value a)
+sendE engine p
    | null assignments
       = do sendText engine $ serialize stmts
-           return $ evalState (patchReplies ps) []
+           return $ Right $ evalState (patchReplies ps) []
    | otherwise = do
         nonce <- genNonce engine
         sendText engine $ catchMe nonce $ serialize stmts
         theReply <- replyBox engine nonce
         case theReply of
-          Right replies -> return $ evalState (patchReplies ps) replies
-          Left err -> do throwIO $ JavaScriptException err
+          Right replies -> return $ Right $ evalState (patchReplies ps) replies
+          Left err -> return $ Left err
   where
     ps = packetize p
 
