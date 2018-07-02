@@ -156,15 +156,38 @@ example e = do
         write e "<h3>Exceptions</h3>"
         JS.send e $ JS.command $ "throw 'Command Fail';"
         write e "<ul><li>send $ command (throw ..) sent (result ignored)</li></ul>"
-        r :: Either JS.JavaScriptException Value <- E.try $ JS.send e $ JS.procedure $ "(function(){throw 'Procedure Fail'})();"
+        v9 :: Either JS.JavaScriptException Value <- E.try $ JS.send e $ JS.procedure $ "(function(){throw 'Procedure Fail'})();"
         scroll e "cursor"
         write e "<ul><li>send $ procedure (throw ..) sent</li></ul>"
-        case r of
+        case v9 of
           Right _ -> do
             write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
             exitFailure
           Left (JS.JavaScriptException v) -> assert e (fromJSON v) ("Procedure Fail" :: String)
 
-            -- First test of send command
+        v10 :: Either JS.JavaScriptException (Result (String,String,String)) <- E.try $ JS.send e $ liftA3 (,,)
+             <$> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('Hello') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('News') })")
+
+        write e "<ul><li>send $ procedure (3 promises, 1 rejected) sent</li></ul>"
+        case v10 of
+          Right _ -> do
+            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left (JS.JavaScriptException v) -> assert e (fromJSON v) ("Promise Reject" :: String)
+
+        v11 :: Either Value (Result (String,String,String)) <- JS.sendE e $ liftA3 (,,)
+             <$> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('Hello') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('News') })")
+
+        write e "<ul><li>sendE $ procedure (3 promises, 1 rejected) sent</li></ul>"
+        case v11 of
+          Right _ -> do
+            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
+
         write e "<h2>All Tests Pass</h2>"
         scroll e "cursor"
