@@ -1,6 +1,16 @@
 {-# LANGUAGE OverloadedStrings,KindSignatures, GADTs, ScopedTypeVariables #-}
 
-module Network.JavaScript where
+module Network.JavaScript
+  ( Packet
+  , Packetize(..)
+  , send
+  , command
+  , procedure
+  , start
+  , JavaScriptException(..)
+  , Engine
+  , addListener
+  ) where
         
 import Control.Applicative((<|>))
 import Control.Exception(Exception)
