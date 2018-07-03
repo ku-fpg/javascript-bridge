@@ -120,7 +120,7 @@ bootstrap =   LT.unlines
    ,     "         throw(err);"
    ,     "   };"
    ,     "   var event = function(ev) {"
-   ,     "         jsb.send(JSON.stringify(ev));"
+   ,     "         jsb.send(JSON.stringify({event: ev}));"
    ,     "   };"
    ,     "   var reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
@@ -135,9 +135,9 @@ bootstrap =   LT.unlines
    ]
 
 -- | Add a listener for events. These are chained.
+--
 --   From javascript, you can call event(..) to send
---   values to this listener. The only requirement is than any object
---   does not have a "haskell" tag at the top-level.
+--   values to this listener. Any valid JSON value can be sent.
 
 addListener :: Engine -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
@@ -246,18 +246,20 @@ data Reply = Result Int [Value]
   deriving Show
 
 instance FromJSON Reply where
-  parseJSON o =  parseResult o
+  parseJSON o =  parseEvent o
+             <|> parseResult o
              <|> parseError o
-             <|> pure (Event o)
     where
+      parseEvent = withObject "Event" $ \v -> Event
+        <$> v .: "event"
       parseResult = withObject "Result" $ \v -> Result
         <$> v .: "id"
         <*> v .: "result"
-        <* (v .: "haskell" :: Parser Bool)
+        <* (v .: "haskell" :: Parser Value)
       parseError = withObject "Error" $ \v -> Error
         <$> v .: "id"
         <*> v .: "error"
-        <* (v .: "haskell" :: Parser Bool)
+        <* (v .: "haskell" :: Parser Value)
 
 data JavaScriptException = JavaScriptException Value
     deriving Show
