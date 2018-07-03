@@ -5,6 +5,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Control.Exception as E
+import Control.Monad (forever)
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -68,6 +69,10 @@ example :: JS.Engine IO -> IO ()
 example e = do
         es <- newTChanIO
         JS.addListener e $ atomically . writeTChan es
+
+        pid <- forkIO $ forever $ do
+          ev <- atomically $ readTChan es
+          print ("Unexpected event"::String,ev::Value)
 
         -- First test of send command
         writeTo e "send-command" "send $ command ... works"
@@ -192,15 +197,10 @@ example e = do
           Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
 
 
-        -- Now, check to see that there are no events
         write e "<h3>Events</h3>"
+
+        killThread pid
         
-        ok <- atomically $ isEmptyTChan es
-
-        if ok
-        then write e "<ul><li>no events at this point (correct)</li></ul>"
-        else write e "<ul><li style='color: red'>there are events in queue (bad)</li></ul>"
-
         JS.send e $ JS.command ("event('Hello, World')");
 
         write e "<ul><li>send $ command $ event 'Hello, World'</li></ul>"
