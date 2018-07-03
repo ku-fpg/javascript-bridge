@@ -23,10 +23,6 @@ source-repository head
   type:                git
   location:            https://github.com/ku-fpg/javascript-bridge
 
-flag test
-  description:         Build the test program.
-  default:             True
-
 library
   exposed-modules:     Network.JavaScript
   -- other-modules:
@@ -48,7 +44,7 @@ library
   ghc-options:         -Wall
 
 test-suite javascript-bridge-test
-  type:       exitcode-stdio-1.0        
+  type:       exitcode-stdio-1.0
   main-is:             Main.hs
   build-depends:       base                 >= 4.8 && < 4.12
                      , aeson                >= 1.0     && < 1.5
