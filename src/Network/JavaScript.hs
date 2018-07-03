@@ -174,9 +174,6 @@ sendE engine ps
 
     catchMe :: Int -> LT.Text -> LT.Text
     catchMe nonce txt = "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <> reply nonce <> ";"
---      txt -- "try{" <> txt <> }catch(err){" <> 
-
---(reply nonce : stmts)
 
     serialize :: [PacketStmt] -> LT.Text
     serialize = LT.concat . map showStmt . reverse
