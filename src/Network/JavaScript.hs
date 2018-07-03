@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings,KindSignatures, GADTs, ScopedTypeVariables #-}
 
 module Network.JavaScript where
-        
+
 import Control.Applicative((<|>))
-import Data.Monoid
+import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
@@ -33,8 +33,8 @@ instance Applicative Packet where
   pure = Pure
   (<*>) = Ap
 
--- | This accepts WebSocket requests. 
--- 
+-- | This accepts WebSocket requests.
+--
 --     * All server->client requests are of type 'Text', and are evalued.
 --     * All client->server requests are of type 'Value'.
 --     * Any client->server requests that are are an Object,
@@ -63,7 +63,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                                kV event
       _      -> return () -- throw away bad (non-JSON) packet
 
-  kE $ Engine 
+  kE $ Engine
      { sendText = WS.sendTextData conn
      , genNonce = atomically $ do
          n <- readTVar nonceRef
@@ -87,7 +87,7 @@ data Engine m = Engine
 
 addListener :: Engine IO -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
-              
+
 command :: LT.Text -> Packet ()
 command = Command
 
@@ -126,7 +126,7 @@ send engine p
     genPacket (Ap g h)         = genPacket g *> genPacket h
     genPacket (Command stmt)   =
         modify $ \ (n,ss) -> (n,CommandStmt stmt : ss)
-    genPacket (Procedure stmt) = 
+    genPacket (Procedure stmt) =
         modify $ \ (n,ss) -> (n+1,ProcedureStmt n stmt : ss)
 
     -- generate the call to reply (as a final command)
@@ -147,7 +147,7 @@ send engine p
     popState = state $ \ vs -> case vs of
                  [] -> error "run out of result arguments"
                  (v:vs') -> (v,vs')
-                     
+
 data PacketStmt
    = CommandStmt       LT.Text
    | ProcedureStmt Int LT.Text
