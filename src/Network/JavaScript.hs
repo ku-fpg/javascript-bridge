@@ -1,15 +1,19 @@
 {-# LANGUAGE OverloadedStrings,KindSignatures, GADTs, ScopedTypeVariables #-}
 
 module Network.JavaScript
-  ( Packet
-  , send
-  , sendE
+  ( -- * Applicative Packets of JavaScript
+    Packet
   , command
   , procedure
-  , start
+    -- * sending Packets
+  , send
+  , sendE
+    -- * Events
   , JavaScriptException(..)
-  , Engine
   , addListener
+    -- * Web services
+  , start
+  , Engine
   ) where
         
 import Control.Applicative((<|>))
@@ -125,18 +129,22 @@ bootstrap =   LT.unlines
    ,     "         error(n,err);"
    ,     "       });"
    ,     "   };"
-   ,     "   // if (true || debug) { console.log('eval',evt.data); }"
+--   ,     "   if (true || debug) { console.log('eval',evt.data); }"
    ,     "   eval('(function(){' + evt.data + '})()');"
    ,     "};"
    ]
 
-
+-- | Add a listener for events. These are chained.
+--   From javascript, you can call event(..) to send
+--   values to this listener. The only requirement is than any object
+--   does not have a "haskell" tag at the top-level.
 
 addListener :: Engine IO -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
 
 -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
 --   Should never throw an exception, which is reported to console.log.
+
 command :: LT.Text -> Packet ()
 command = Command
 
