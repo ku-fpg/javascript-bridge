@@ -3,6 +3,7 @@
 
 import Control.Applicative
 import Control.Concurrent
+import Control.Concurrent.STM
 import qualified Control.Exception as E
 import Data.Aeson
 import Data.Monoid((<>))
@@ -65,7 +66,8 @@ assert e (Success n) g
 
 example :: JS.Engine IO -> IO ()
 example e = do
-        JS.addListener e print
+        es <- newTChanIO
+        JS.addListener e $ atomically . writeTChan es
 
         -- First test of send command
         writeTo e "send-command" "send $ command ... works"
@@ -185,9 +187,29 @@ example e = do
         write e "<ul><li>sendE $ procedure (3 promises, 1 rejected) sent</li></ul>"
         case v11 of
           Right _ -> do
-            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            write e "<ul><li style='color: red'>sendE $ procedure (throw ..) replied with result </li></ul>"
             exitFailure
           Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
+
+
+        -- Now, check to see that there are no events
+        write e "<h3>Events</h3>"
+        
+        ok <- atomically $ isEmptyTChan es
+
+        if ok
+        then write e "<ul><li>no events at this point (correct)</li></ul>"
+        else write e "<ul><li style='color: red'>there are events in queue (bad)</li></ul>"
+
+        JS.send e $ JS.command ("event('Hello, World')");
+
+        write e "<ul><li>send $ command $ event 'Hello, World'</li></ul>"
+        wait <- registerDelay $ 1000 * 1000
+        event :: Result String
+              <- atomically $ (fromJSON <$> readTChan es)
+                     `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")
+
+        assert e event ("Hello, World" :: String)
 
         write e "<h2>All Tests Pass</h2>"
         scroll e "cursor"
