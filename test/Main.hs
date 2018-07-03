@@ -3,6 +3,9 @@
 
 import Control.Applicative
 import Control.Concurrent
+import Control.Concurrent.STM
+import qualified Control.Exception as E
+import Control.Monad (forever)
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -26,17 +29,10 @@ main = do
                ,    "<h3>Sending Commands</h3>"
                ,    "<ul><li id='send-command'><i style='color: #ff0000'>waiting for send $ command</i></li></ul>"
                ,   "<div id='cursor'>"
+                 -- Include this code in your page
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://' + location.host + '/');"
-               ,     "jsb.onmessage = function(evt){ "
-               ,     "   var reply = function(n,obj) {"
-               ,     "       Promise.all(obj).then(function(obj){"
-               ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, result: obj}));"
-               ,     "       });"
-               ,     "   };"
-               ,     "   if (true || debug) { console.log('eval',evt.data); }"
-               ,     "   eval('(function(){' + evt.data + '})()');"
-               ,     "};"
+               ,     "jsb.onmessage = (evt) => eval(evt.data);"               
                ,   "</script>"
                , "</body>"
                ]
@@ -44,20 +40,20 @@ main = do
         takeMVar lock
 
 
-write :: JS.Engine IO -> String -> IO ()
+write :: JS.Engine -> String -> IO ()
 write e txt = JS.send e $ JS.command ("document.getElementById('cursor').innerHTML += " <> T.pack (show txt))
 
 jsWriteTo :: String -> String -> JS.Packet ()
 jsWriteTo i txt = JS.command ("document.getElementById('" <> T.pack i <> "').innerHTML += " <> T.pack (show txt))
 
-writeTo:: JS.Engine IO -> String -> String -> IO ()
+writeTo:: JS.Engine -> String -> String -> IO ()
 writeTo e i txt = JS.send e $ JS.command ("document.getElementById('" <> T.pack i <> "').innerHTML = " <> T.pack (show txt))
 
-scroll :: JS.Engine IO -> String -> IO ()
+scroll :: JS.Engine -> String -> IO ()
 scroll e i = JS.send e $ JS.command $ "document.getElementById('" <> T.pack i <> "').scrollIntoView({behavior: 'smooth', block: 'end'})"
 
 
-assert :: (Eq a, Show a) => JS.Engine IO -> Result a -> a -> IO ()
+assert :: (Eq a, Show a) => JS.Engine -> Result a -> a -> IO ()
 assert e (Error er) _ = do
   write e $ "<ul><li><span style='color: red'>Failed to parse result: " ++ show er ++ "</span></ul></li>"
   exitFailure
@@ -69,9 +65,14 @@ assert e (Success n) g
        write e $ "<ul><li><span style='color: red'>unexpected result : '" ++ show n ++ "'</span></li></ul>"
        exitFailure
 
-example :: JS.Engine IO -> IO ()
+example :: JS.Engine -> IO ()
 example e = do
-        JS.addListener e print
+        es <- newTChanIO
+        JS.addListener e $ atomically . writeTChan es
+
+        pid <- forkIO $ forever $ do
+          ev <- atomically $ readTChan es
+          print ("Unexpected event"::String,ev::Value)
 
         -- First test of send command
         writeTo e "send-command" "send $ command ... works"
@@ -159,8 +160,56 @@ example e = do
 
         assert e v8 (2,"World",True)
 
+        write e "<h3>Exceptions</h3>"
+        JS.send e $ JS.command $ "throw 'Command Fail';"
+        write e "<ul><li>send $ command (throw ..) sent (result ignored)</li></ul>"
+        v9 :: Either JS.JavaScriptException Value <- E.try $ JS.send e $ JS.procedure $ "(function(){throw 'Procedure Fail'})();"
         scroll e "cursor"
+        write e "<ul><li>send $ procedure (throw ..) sent</li></ul>"
+        case v9 of
+          Right _ -> do
+            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left (JS.JavaScriptException v) -> assert e (fromJSON v) ("Procedure Fail" :: String)
 
-        -- First test of send command
+        v10 :: Either JS.JavaScriptException (Result (String,String,String)) <- E.try $ JS.send e $ liftA3 (,,)
+             <$> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('Hello') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('News') })")
+
+        write e "<ul><li>send $ procedure (3 promises, 1 rejected) sent</li></ul>"
+        case v10 of
+          Right _ -> do
+            write e "<ul><li style='color: red'>send $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left (JS.JavaScriptException v) -> assert e (fromJSON v) ("Promise Reject" :: String)
+
+        v11 :: Either Value (Result (String,String,String)) <- JS.sendE e $ liftA3 (,,)
+             <$> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('Hello') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
+             <*> (fromJSON <$> JS.procedure "new Promise(function(good,bad) { good('News') })")
+
+        write e "<ul><li>sendE $ procedure (3 promises, 1 rejected) sent</li></ul>"
+        case v11 of
+          Right _ -> do
+            write e "<ul><li style='color: red'>sendE $ procedure (throw ..) replied with result </li></ul>"
+            exitFailure
+          Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
+
+
+        write e "<h3>Events</h3>"
+
+        killThread pid
+        
+        JS.send e $ JS.command ("event('Hello, World')");
+
+        write e "<ul><li>send $ command $ event 'Hello, World'</li></ul>"
+        wait <- registerDelay $ 1000 * 1000
+        event :: Result String
+              <- atomically $ (fromJSON <$> readTChan es)
+                     `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")
+
+        assert e event ("Hello, World" :: String)
+
         write e "<h2>All Tests Pass</h2>"
         scroll e "cursor"
