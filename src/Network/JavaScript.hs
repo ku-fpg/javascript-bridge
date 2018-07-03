@@ -31,7 +31,6 @@ import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
-import Data.Aeson.Types (Parser)
 import qualified Data.IntMap.Strict as IM
 
 -- | Deep embedding of an applicative packet
@@ -116,7 +115,7 @@ bootstrap :: LT.Text
 bootstrap =   LT.unlines
    [     "jsb.onmessage = function(evt){ "
    ,     "   var error = function(n,err) {"
-   ,     "         jsb.send(JSON.stringify({haskell: true, id: n, error: err}));"
+   ,     "         jsb.send(JSON.stringify({id: n, error: err}));"
    ,     "         throw(err);"
    ,     "   };"
    ,     "   var event = function(ev) {"
@@ -124,7 +123,7 @@ bootstrap =   LT.unlines
    ,     "   };"
    ,     "   var reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
-   ,     "         jsb.send(JSON.stringify({haskell: true, id: n, result: obj}));"
+   ,     "         jsb.send(JSON.stringify({id: n, result: obj}));"
    ,     "       }).catch(function(err){"
    ,     "         error(n,err);"
    ,     "       });"
@@ -255,11 +254,9 @@ instance FromJSON Reply where
       parseResult = withObject "Result" $ \v -> Result
         <$> v .: "id"
         <*> v .: "result"
-        <* (v .: "haskell" :: Parser Value)
       parseError = withObject "Error" $ \v -> Error
         <$> v .: "id"
         <*> v .: "error"
-        <* (v .: "haskell" :: Parser Value)
 
 data JavaScriptException = JavaScriptException Value
     deriving Show
