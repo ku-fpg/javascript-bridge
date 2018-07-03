@@ -40,20 +40,20 @@ main = do
         takeMVar lock
 
 
-write :: JS.Engine IO -> String -> IO ()
+write :: JS.Engine -> String -> IO ()
 write e txt = JS.send e $ JS.command ("document.getElementById('cursor').innerHTML += " <> T.pack (show txt))
 
 jsWriteTo :: String -> String -> JS.Packet ()
 jsWriteTo i txt = JS.command ("document.getElementById('" <> T.pack i <> "').innerHTML += " <> T.pack (show txt))
 
-writeTo:: JS.Engine IO -> String -> String -> IO ()
+writeTo:: JS.Engine -> String -> String -> IO ()
 writeTo e i txt = JS.send e $ JS.command ("document.getElementById('" <> T.pack i <> "').innerHTML = " <> T.pack (show txt))
 
-scroll :: JS.Engine IO -> String -> IO ()
+scroll :: JS.Engine -> String -> IO ()
 scroll e i = JS.send e $ JS.command $ "document.getElementById('" <> T.pack i <> "').scrollIntoView({behavior: 'smooth', block: 'end'})"
 
 
-assert :: (Eq a, Show a) => JS.Engine IO -> Result a -> a -> IO ()
+assert :: (Eq a, Show a) => JS.Engine -> Result a -> a -> IO ()
 assert e (Error er) _ = do
   write e $ "<ul><li><span style='color: red'>Failed to parse result: " ++ show er ++ "</span></ul></li>"
   exitFailure
@@ -65,7 +65,7 @@ assert e (Success n) g
        write e $ "<ul><li><span style='color: red'>unexpected result : '" ++ show n ++ "'</span></li></ul>"
        exitFailure
 
-example :: JS.Engine IO -> IO ()
+example :: JS.Engine -> IO ()
 example e = do
         es <- newTChanIO
         JS.addListener e $ atomically . writeTChan es

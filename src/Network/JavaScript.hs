@@ -57,9 +57,9 @@ instance Applicative Packet where
 --     * Any client->server requests that are are an Object,
 --       with a tag called 'jsb', are used to denode procedural replies.
 --
--- listeners are added using the 'Engine IO' handle
+-- listeners are added using the 'Engine' handle
 
-start :: (Engine IO -> IO ())
+start :: (Engine -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
@@ -104,10 +104,10 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
      }
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
-data Engine m = Engine
-  { sendText :: LT.Text -> m ()      -- send text to the JS engine
-  , genNonce ::            m Int     -- nonce generator
-  , replyBox :: Int     -> m (Either Value [Value]) -- reply mailbox
+data Engine = Engine
+  { sendText :: LT.Text -> IO ()      -- send text to the JS engine
+  , genNonce ::            IO Int     -- nonce generator
+  , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
   , listener :: TVar (Value -> IO ()) -- listener(s)
   }
 
@@ -139,7 +139,7 @@ bootstrap =   LT.unlines
 --   values to this listener. The only requirement is than any object
 --   does not have a "haskell" tag at the top-level.
 
-addListener :: Engine IO -> (Value -> IO ()) -> IO ()
+addListener :: Engine -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
 
 -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
@@ -162,14 +162,14 @@ command = Command
 procedure :: LT.Text -> Packet Value
 procedure = Procedure
 
-send :: Engine IO -> Packet a -> IO a
+send :: Engine -> Packet a -> IO a
 send e p = do
   r <- sendE e p
   case r of
     Right a -> return a
     Left err -> throwIO $ JavaScriptException err
 
-sendE :: Engine IO -> Packet a -> IO (Either Value a)
+sendE :: Engine -> Packet a -> IO (Either Value a)
 sendE engine ps
    | null assignments
       = do sendText engine $ serialize stmts
