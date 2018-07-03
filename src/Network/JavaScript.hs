@@ -27,6 +27,7 @@ import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
+import Data.Aeson.Types (Parser)
 import qualified Data.IntMap.Strict as IM
 
 -- | Deep embedding of an applicative packet
@@ -67,6 +68,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
   _ <- forkIO $ catchMe $ forever $ do
     d <- WS.receiveData conn
+--    print d
     case decode' d of
       Just (Result _ []) -> return () 
       Just (Result n replies) -> atomically
@@ -81,7 +83,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                       $ obj
       Just (Event event) -> do kV <- atomically $ readTVar listenerRef
                                kV event
-      _      -> return () -- throw away bad (non-JSON) packet
+      Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
   kE $ Engine 
      { sendText = WS.sendTextData conn
@@ -110,7 +112,7 @@ bootstrap :: LT.Text
 bootstrap =   LT.unlines
    [     "jsb.onmessage = function(evt){ "
    ,     "   var error = function(n,err) {"
-   ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, error: err}));"
+   ,     "         jsb.send(JSON.stringify({haskell: true, id: n, error: err}));"
    ,     "         throw(err);"
    ,     "   };"
    ,     "   var event = function(ev) {"
@@ -118,13 +120,13 @@ bootstrap =   LT.unlines
    ,     "   };"
    ,     "   var reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
-   ,     "         jsb.send(JSON.stringify({jsonrpc: '2.0', id: n, result: obj}));"
+   ,     "         jsb.send(JSON.stringify({haskell: true, id: n, result: obj}));"
    ,     "       }).catch(function(err){"
    ,     "         error(n,err);"
    ,     "       });"
    ,     "   };"
-   ,     "   if (true || debug) { console.log('eval',evt.data); }"
-   ,     "      eval('(function(){' + evt.data + '})()');"
+   ,     "   // if (true || debug) { console.log('eval',evt.data); }"
+   ,     "   eval('(function(){' + evt.data + '})()');"
    ,     "};"
    ]
 
@@ -243,9 +245,11 @@ instance FromJSON Reply where
       parseResult = withObject "Result" $ \v -> Result
         <$> v .: "id"
         <*> v .: "result"
+        <* (v .: "haskell" :: Parser Bool)
       parseError = withObject "Error" $ \v -> Error
         <$> v .: "id"
         <*> v .: "error"
+        <* (v .: "haskell" :: Parser Bool)
 
 data JavaScriptException = JavaScriptException Value
     deriving Show
