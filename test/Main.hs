@@ -20,7 +20,10 @@ main = do
         lock <- newEmptyMVar
 
         _ <- forkIO $ scotty 3000 $ do
-          middleware $ JS.start $ \ e -> example e >> putMVar lock ()
+          let always = do putMVar lock ()
+                          putStrLn "Finished example"
+                          
+          middleware $ JS.start $ \ e -> example e `E.finally` always 
 
           get "/" $ do
             html $ mconcat
@@ -211,5 +214,24 @@ example e = do
 
         assert e event ("Hello, World" :: String)
 
+        write e "<h3>Testing staying alive</h3>"
+
+        let w = 80
+        
+        write e $ "<ul><li>waiting " ++ show w ++ " seconds...</li></ul>"
+        scroll e "cursor"
+        let loop n = do
+              print n
+              threadDelay $ 1000 * 1000
+              loop (n+1)
+        _ <- forkIO $ loop 1     
+        _ <- threadDelay $ w * 1000 * 1000
+        print "DONE!"
+        write e $ "<ul><li>Waited. Connection still alive!</li></ul>"
+
+        write e $ "<ul><li>Sending trivial procedure test</li></ul>"
+        v1 :: Value <- JS.send e (JS.procedure "1 + 1")
+        assert e (fromJSON v1) (2 :: Int)
+        
         write e "<h2>All Tests Pass</h2>"
         scroll e "cursor"

@@ -19,6 +19,7 @@ module Network.JavaScript
 import Control.Applicative((<|>))
 import Control.Exception(Exception)
 import Control.Exception as Exception
+import qualified Data.HashMap.Strict as HashMap
 import Data.Monoid
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
@@ -62,6 +63,8 @@ start :: (Engine -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
+  -- Use ping to keep connection alive
+  WS.forkPingThread conn 10
   -- Bootstrap the remote handler
   WS.sendTextData conn bootstrap
   -- Handling packets
