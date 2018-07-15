@@ -15,12 +15,12 @@ module Network.JavaScript
   , start
   , Engine
   ) where
-        
+
 import Control.Applicative((<|>))
 import Control.Exception(Exception)
 import Control.Exception as Exception
 import qualified Data.HashMap.Strict as HashMap
-import Data.Monoid
+import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
@@ -50,8 +50,8 @@ instance Applicative Packet where
   pure = Pure
   (<*>) = Ap
 
--- | This accepts WebSocket requests. 
--- 
+-- | This accepts WebSocket requests.
+--
 --     * All server->client requests are of type 'Text', and are evalued.
 --     * All client->server requests are of type 'Value'.
 --     * Any client->server requests that are are an Object,
@@ -76,7 +76,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
     d <- WS.receiveData conn
 --    print d
     case decode' d of
-      Just (Result _ []) -> return () 
+      Just (Result _ []) -> return ()
       Just (Result n replies) -> atomically
                       $ modifyTVar replyMap
                       $ IM.insert n
@@ -91,7 +91,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                                kV event
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
-  kE $ Engine 
+  kE $ Engine
      { sendText = WS.sendTextData conn
      , genNonce = atomically $ do
          n <- readTVar nonceRef
@@ -207,7 +207,7 @@ sendE engine ps
     genPacket (Ap g h)         = genPacket g *> genPacket h
     genPacket (Command stmt)   =
         modify $ \ (n,ss) -> (n,CommandStmt stmt : ss)
-    genPacket (Procedure stmt) = 
+    genPacket (Procedure stmt) =
         modify $ \ (n,ss) -> (n+1,ProcedureStmt n stmt : ss)
 
     -- generate the call to reply (as a final command)
@@ -227,7 +227,7 @@ sendE engine ps
     popState = state $ \ vs -> case vs of
                  [] -> error "run out of result arguments"
                  (v:vs') -> (v,vs')
-                     
+
 data PacketStmt
    = CommandStmt       LT.Text
    | ProcedureStmt Int LT.Text
