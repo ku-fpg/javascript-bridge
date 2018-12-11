@@ -5,9 +5,14 @@ module Network.JavaScript
     Packet
   , command
   , procedure
+  , constructor
     -- * sending Packets
   , send
   , sendE
+    -- * Remote Value
+  , RemoteValue
+  , var
+  , delete
     -- * Events
   , JavaScriptException(..)
   , addListener
@@ -19,13 +24,12 @@ module Network.JavaScript
 import Control.Applicative((<|>))
 import Control.Exception(Exception)
 import Control.Exception as Exception
-import qualified Data.HashMap.Strict as HashMap
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
 import qualified Network.WebSockets as WS
-import Control.Monad.Trans.State
+import Control.Monad.Trans.State.Strict
 
 import Control.Concurrent (forkIO)
 import Control.Exception (try, SomeException)
@@ -42,6 +46,16 @@ data Packet :: * -> * where
                        -> Packet b
   Command   :: LT.Text -> Packet ()
   Procedure :: LT.Text -> Packet Value
+  Constructor :: LT.Text -> Packet RemoteValue
+
+data RemoteValue = RemoteValue Int Int
+  deriving (Eq, Ord, Show)
+
+var :: RemoteValue -> LT.Text
+var (RemoteValue n u) = "jsb.c" <> LT.pack (show n) <> "_" <> LT.pack (show u)
+
+incRemoteValue :: RemoteValue -> RemoteValue
+incRemoteValue rv = rv
 
 instance Functor Packet where
   fmap f m = Pure f `Ap` m
@@ -117,6 +131,7 @@ data Engine = Engine
 bootstrap :: LT.Text
 bootstrap =   LT.unlines
    [     "jsb.onmessage = function(evt){ "
+   ,     "   var debug = false;"
    ,     "   var error = function(n,err) {"
    ,     "         jsb.send(JSON.stringify({id: n, error: err}));"
    ,     "         throw(err);"
@@ -126,12 +141,13 @@ bootstrap =   LT.unlines
    ,     "   };"
    ,     "   var reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
+   ,     "         if (debug) { console.log('reply',{id:n, result:obj}); }"   
    ,     "         jsb.send(JSON.stringify({id: n, result: obj}));"
    ,     "       }).catch(function(err){"
    ,     "         error(n,err);"
    ,     "       });"
    ,     "   };"
---   ,     "   if (true || debug) { console.log('eval',evt.data); }"
+   ,     "   if (debug) { console.log('eval',evt.data); }"
    ,     "   eval('(function(){' + evt.data + '})()');"
    ,     "};"
    ]
@@ -164,6 +180,12 @@ command = Command
 procedure :: LT.Text -> Packet Value
 procedure = Procedure
 
+constructor :: LT.Text -> Packet RemoteValue
+constructor = Constructor
+
+delete :: RemoteValue -> Packet ()
+delete rv = command $ "delete " <> var rv
+
 send :: Engine -> Packet a -> IO a
 send e p = do
   r <- sendE e p
@@ -172,70 +194,85 @@ send e p = do
     Left err -> throwIO $ JavaScriptException err
 
 sendE :: Engine -> Packet a -> IO (Either Value a)
-sendE engine ps
-   | null assignments
-      = do sendText engine $ serialize stmts
-           return $ Right $ evalState (patchReplies ps) []
-   | otherwise = do
-        nonce <- genNonce engine
-        sendText engine $ catchMe nonce $ serialize stmts
-        theReply <- replyBox engine nonce
-        case theReply of
-          Right replies -> return $ Right $ evalState (patchReplies ps) replies
-          Left err -> return $ Left err
+sendE engine ps = do
+    nonce <- genNonce engine
+    let start = RemoteValue nonce 0
+    let (_,(_,stmts,_)) = runState (genPacket ps) (0,[],start)
+    go stmts start nonce
   where
-
-    (_,(_,stmts)) = runState (genPacket ps) (0,[])
-
-    catchMe :: Int -> LT.Text -> LT.Text
-    catchMe nonce txt = "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <> reply nonce <> ";"
-
-    serialize :: [PacketStmt] -> LT.Text
-    serialize = LT.concat . map showStmt . reverse
-
-    assignments :: [LT.Text]
-    assignments = [ v
-                  | a <- reverse stmts
-                  , v <- case a of
-                      CommandStmt{}     -> []
-                      ProcedureStmt i _ -> [procVar i]
-                  ]
-
     -- generate the packet to be sent
-    genPacket :: Packet a -> State (Int,[PacketStmt]) ()
+    genPacket :: Packet a -> State (Int,[PacketStmt],RemoteValue) ()
     genPacket Pure{}           = return ()
     genPacket (Ap g h)         = genPacket g *> genPacket h
     genPacket (Command stmt)   =
-        modify $ \ (n,ss) -> (n,CommandStmt stmt : ss)
+      modify $ \ (n,ss,rv) -> (n,CommandStmt stmt : ss,rv)
     genPacket (Procedure stmt) =
-        modify $ \ (n,ss) -> (n+1,ProcedureStmt n stmt : ss)
+      modify $ \ (n,ss,rv) -> (n+1,ProcedureStmt n stmt : ss,rv)
+    genPacket (Constructor stmt) =
+      modify $ \ (n,ss,rv) -> (n,ConstructorStmt rv stmt : ss, incRemoteValue rv)
 
-    -- generate the call to reply (as a final command)
-    reply :: Int -> LT.Text
-    reply n = "reply(" <> LT.intercalate ","
-                           [ LT.pack (show n)
-                           , "[" <> LT.intercalate "," assignments <> "]"
-                           ] <> ")"
+    go stmts start nonce
+       | null assignments = do
+           sendText engine $ serialize stmts
+           return $ Right $ evalState (patchReplies ps) ([],start)
+       | otherwise = do
+           sendText engine $ catchMe nonce $ serialize stmts
+           theReply <- replyBox engine nonce
+           case theReply of
+             Right replies -> return $ Right $ evalState (patchReplies ps) (replies,start)
+             Left err -> return $ Left err
+      where
+        catchMe :: Int -> LT.Text -> LT.Text
+        catchMe nonce txt =
+          "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <>
+          reply nonce <> ";"
 
-    patchReplies :: Packet a -> State [Value] a
-    patchReplies (Pure a)    = return a
-    patchReplies (Ap g h)    = patchReplies g <*> patchReplies h
-    patchReplies Command{}   = return ()
-    patchReplies Procedure{} = popState
+        serialize :: [PacketStmt] -> LT.Text
+        serialize = LT.concat . map showStmt . reverse
 
-    popState :: State [Value] Value
-    popState = state $ \ vs -> case vs of
-                 [] -> error "run out of result arguments"
-                 (v:vs') -> (v,vs')
+        assignments :: [LT.Text]
+        assignments =
+          [ v
+          | a <- reverse stmts
+          , v <- case a of
+                   ProcedureStmt i _ -> [procVar i]
+                   _ -> []
+          ]
+        -- generate the call to reply (as a final command)
+        reply :: Int -> LT.Text
+        reply n =
+          "reply(" <> LT.intercalate ","
+          [ LT.pack (show n)
+          , "[" <> LT.intercalate "," assignments <> "]"
+          ] <> ")"
+
+        patchReplies :: Packet a -> State ([Value],RemoteValue) a
+        patchReplies (Pure a)    = return a
+        patchReplies (Ap g h)    = patchReplies g <*> patchReplies h
+        patchReplies Command{}   = return ()
+        patchReplies Procedure{} = popValue
+        patchReplies Constructor{} = popRemoteValue
+      
+        popRemoteValue :: State ([Value],RemoteValue) RemoteValue
+        popRemoteValue = state $ \ (vs,rv) -> (rv,(vs,incRemoteValue rv))
+
+        popValue :: State ([Value],RemoteValue) Value
+        popValue = state $ \ (vs,rv) -> case vs of
+                                     [] -> error "run out of result arguments"
+                                     (v:vs') -> (v,(vs',rv))
+
+
 
 data PacketStmt
    = CommandStmt       LT.Text
    | ProcedureStmt Int LT.Text
+   | ConstructorStmt RemoteValue LT.Text
  deriving Show
 
 showStmt :: PacketStmt -> LT.Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
+showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
 
 procVar :: Int -> LT.Text
 procVar n = "v" <> LT.pack (show n)

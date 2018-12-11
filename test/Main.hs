@@ -106,6 +106,7 @@ example e = do
 
         scroll e "cursor"
 
+        -- TODO: add test of returning a object with values, and an array.
         write e "<h3>Sending Combine Procedures</h3>"
         v4 :: Result (Int,String,Bool) <- JS.send e $ liftA3 (,,)
           <$> (fromJSON <$> JS.procedure "1 + 1")
@@ -162,6 +163,30 @@ example e = do
           <* jsWriteTo "combine-comms-procs" "<li>.. and 5 commands ...</li>"
 
         assert e v8 (2,"World",True)
+
+        write e "<h3>Builder</h3>"
+
+        rv :: JS.RemoteValue <- JS.send e $
+              JS.constructor "\"Hello\""
+        write e "<ul><li>send $ constructor \"Hello\" work</li></ul>"
+        
+        -- hard wired to 40, from observation
+        assert e (return (show rv)) "RemoteValue 40 0"
+
+        -- force reading of this remote value (not possible in general)
+        v6 :: Result String <- JS.send e $
+              fromJSON <$> JS.procedure (JS.var rv)
+        write e "<ul><li>send $ procedure (var rv)</li></ul>"
+
+        JS.send e $ JS.delete rv
+        write e "<ul><li>send $ delete rv</li></ul>"
+
+        -- read after delete; should return Null
+        v6 :: Result Value <- JS.send e $
+              fromJSON <$> JS.procedure (JS.var rv)
+        write e "<ul><li>send $ procedure (var rv) (again)</li></ul>"
+
+        assert e v6 Null
 
         write e "<h3>Exceptions</h3>"
         JS.send e $ JS.command $ "throw 'Command Fail';"
