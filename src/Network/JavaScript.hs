@@ -12,9 +12,10 @@ module Network.JavaScript
     -- * sending Packets
   , send
   , sendE
-    -- * Remote Value
+    -- * Remote and Local Values
   , RemoteValue
   , var
+  , val
   , delete
     -- * Events
   , JavaScriptException(..)
@@ -38,7 +39,11 @@ import Control.Concurrent (forkIO)
 import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
-import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
+import Data.Aeson ( Value(..), decode', FromJSON(..),withObject,(.:)
+                  , ToJSON(..), encode)
+import Data.Text.Lazy.Encoding(decodeUtf8,encodeUtf8)
+import qualified Data.Aeson.Encoding.Internal as AI
+import qualified Data.Binary.Builder as B
 import qualified Data.IntMap.Strict as IM
 
 import Network.JavaScript.Services
@@ -91,6 +96,11 @@ send e p = do
   case r of
     Right a -> return a
     Left err -> throwIO $ JavaScriptException err
+
+data JavaScriptException = JavaScriptException Value
+    deriving Show
+
+instance Exception JavaScriptException
 
 sendE :: Engine -> Packet a -> IO (Either Value a)
 sendE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
@@ -167,8 +177,18 @@ procVar n = "v" <> LT.pack (show n)
 
 ------------------------------------------------------------------------------
 
+-- A Local handle into a remote value.
 data RemoteValue = RemoteValue Int
   deriving (Eq, Ord, Show)
+
+-- Remote values can not be encoded in JSON, but are JavaScript variables.
+instance ToJSON RemoteValue where
+  toJSON = error "toJSON not supported for RemoteValue"
+  toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
+
+-- | generate the text for a JavaScript value, including RemoteValues.
+val :: ToJSON v => v -> LT.Text
+val = decodeUtf8 . encode
 
 -- | generate the text for a RemoteValue
 var :: RemoteValue -> LT.Text
@@ -177,13 +197,6 @@ var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
 -- | 'delete' a remote value.
 delete :: Remote f => RemoteValue -> f ()
 delete rv = command $ "delete " <> var rv
-
-------------------------------------------------------------------------------
-
-data JavaScriptException = JavaScriptException Value
-    deriving Show
-
-instance Exception JavaScriptException
 
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad
