@@ -3,8 +3,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.JavaScript
-  ( -- * Applicative Packets of JavaScript
-    Packet
+  ( -- * Remote Applicative Packets of JavaScript
+    Remote
+  , Packet
   , command
   , procedure
   , constructor
@@ -40,164 +41,7 @@ import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
 
--- | Deep embedding of an applicative packet
-newtype Packet a = Packet (AF Primitive a)
-  deriving (Functor, Applicative)
-
-data Primitive :: * -> * where
-  Command   :: LT.Text -> Primitive ()
-  Procedure :: LT.Text -> Primitive Value
-  Constructor :: LT.Text -> Primitive RemoteValue
-
-data RemoteValue = RemoteValue Int
-  deriving (Eq, Ord, Show)
-
-var :: RemoteValue -> LT.Text
-var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
-
-incRemoteValue :: RemoteValue -> RemoteValue
-incRemoteValue rv = rv
-
--- | This accepts WebSocket requests.
---
---     * All server->client requests are of type 'Text', and are evalued.
---     * All client->server requests are of type 'Value'.
---     * Any client->server requests that are are an Object,
---       with a tag called 'jsb', are used to denode procedural replies.
---
--- listeners are added using the 'Engine' handle
-
-start :: (Engine -> IO ())
-      -> Application -> Application
-start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
-  conn <- WS.acceptRequest pc
-  -- Use ping to keep connection alive
-  WS.forkPingThread conn 10
-  -- Bootstrap the remote handler
-  WS.sendTextData conn bootstrap
-  -- Handling packets
-  nonceRef <- newTVarIO 0
-  replyMap <- newTVarIO IM.empty
-  listenerRef <- newTVarIO $ \ _ -> return ()
-  let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
-  _ <- forkIO $ catchMe $ forever $ do
-    d <- WS.receiveData conn
---    print d
-    case decode' d of
-      Just (Result _ []) -> return ()
-      Just (Result n replies) -> atomically
-                      $ modifyTVar replyMap
-                      $ IM.insert n
-                      $ Right
-                      $ replies
-      Just (Error n obj) -> atomically
-                      $ modifyTVar replyMap
-                      $ IM.insert n
-                      $ Left
-                      $ obj
-      Just (Event event) -> do kV <- atomically $ readTVar listenerRef
-                               kV event
-      Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
-
-  kE $ Engine
-     { sendText = WS.sendTextData conn
-     , genNonce = atomically $ do
-         n <- readTVar nonceRef
-         writeTVar nonceRef $ succ n
-         return n
-     , replyBox = \ n -> atomically $ do
-         t <- readTVar replyMap
-         case IM.lookup n t of
-           Nothing -> retry
-           Just v -> return v
-     , listener = listenerRef
-     }
-
--- | An 'Engine' is a handle to a specific JavaScript engine
-data Engine = Engine
-  { sendText :: LT.Text -> IO ()      -- send text to the JS engine
-  , genNonce ::            IO Int     -- nonce generator
-  , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
-  , listener :: TVar (Value -> IO ()) -- listener(s)
-  }
-
-
-bootstrap :: LT.Text
-bootstrap =   LT.unlines
-   [     "jsb.onmessage = function(evt){ "
-   ,     "   var debug = false;"
-   ,     "   var error = function(n,err) {"
-   ,     "         jsb.send(JSON.stringify({id: n, error: err}));"
-   ,     "         throw(err);"
-   ,     "   };"
-   ,     "   var event = function(ev) {"
-   ,     "         jsb.send(JSON.stringify({event: ev}));"
-   ,     "   };"
-   ,     "   var reply = function(n,obj) {"
-   ,     "       Promise.all(obj).then(function(obj){"
-   ,     "         if (debug) { console.log('reply',{id:n, result:obj}); }"   
-   ,     "         jsb.send(JSON.stringify({id: n, result: obj}));"
-   ,     "       }).catch(function(err){"
-   ,     "         error(n,err);"
-   ,     "       });"
-   ,     "   };"
-   ,     "   if (debug) { console.log('eval',evt.data); }"
-   ,     "   eval('(function(){' + evt.data + '})()');"
-   ,     "};"
-   ]
-
--- | Add a listener for events. These are chained.
---
---   From javascript, you can call event(..) to send
---   values to this listener. Any valid JSON value can be sent.
-addListener :: Engine -> (Value -> IO ()) -> IO ()
-addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
-
-send :: Engine -> Packet a -> IO a
-send e p = do
-  r <- sendE e p
-  case r of
-    Right a -> return a
-    Left err -> throwIO $ JavaScriptException err
-
-sendE :: Engine -> Packet a -> IO (Either Value a)
-sendE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
-
-prepareStmtA :: Applicative f => f Int -> AF Primitive a -> f (AF Stmt a)
-prepareStmtA _  (PureAF a) = pure (pure a)
-prepareStmtA ug (PrimAF p) = PrimAF <$> prepareStmt ug p
-prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
-
-prepareStmt :: Applicative f => f Int -> Primitive a -> f (Stmt a)
-prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
-prepareStmt ug (Procedure stmt)   = (\ i -> ProcedureStmt i stmt) <$> ug
-prepareStmt ug (Constructor stmt)   = (\ i -> ConstructorStmt (RemoteValue i) stmt) <$> ug
-
-------------------------------------------------------------------------------
-
-data Reply = Result Int [Value]
-           | Error Int Value
-           | Event Value
-  deriving Show
-
-instance FromJSON Reply where
-  parseJSON o =  parseEvent o
-             <|> parseResult o
-             <|> parseError o
-    where
-      parseEvent = withObject "Event" $ \v -> Event
-        <$> v .: "event"
-      parseResult = withObject "Result" $ \v -> Result
-        <$> v .: "id"
-        <*> v .: "result"
-      parseError = withObject "Error" $ \v -> Error
-        <$> v .: "id"
-        <*> v .: "error"
-
-data JavaScriptException = JavaScriptException Value
-    deriving Show
-
-instance Exception JavaScriptException
+import Network.JavaScript.Services
 
 ------------------------------------------------------------------------------
 
@@ -225,9 +69,14 @@ class Remote f where
   --   objects that can not be serialized, or values that are too large to serialize.
   constructor :: LT.Text -> f RemoteValue  
 
--- | 'delete' a remote value.
-delete :: Remote f => RemoteValue -> f ()
-delete rv = command $ "delete " <> var rv
+-- | Deep embedding of an applicative packet
+newtype Packet a = Packet (AF Primitive a)
+  deriving (Functor, Applicative)
+
+data Primitive :: * -> * where
+  Command   :: LT.Text -> Primitive ()
+  Procedure :: LT.Text -> Primitive Value
+  Constructor :: LT.Text -> Primitive RemoteValue
 
 instance Remote Packet where
   command = Packet . PrimAF . Command  
@@ -235,33 +84,16 @@ instance Remote Packet where
   constructor = Packet . PrimAF . Constructor
 
 ------------------------------------------------------------------------------
--- Framework types for Applicative and Monad
 
-data AF :: (* -> *) -> * -> * where
- PureAF :: a -> AF m a
- PrimAF :: m a -> AF m a
- ApAF :: AF m (a -> b) -> AF m a -> AF m b
+send :: Engine -> Packet a -> IO a
+send e p = do
+  r <- sendE e p
+  case r of
+    Right a -> return a
+    Left err -> throwIO $ JavaScriptException err
 
-instance Functor (AF m) where
-  fmap f g = pure f <*> g
-  
-instance Applicative (AF m) where
-  pure = PureAF
-  (<*>) = ApAF
-
-concatAF :: (forall a . m a -> Maybe b) -> AF m a -> [b]
-concatAF f (PureAF _) = []
-concatAF f (PrimAF p) = case f p of
-  Nothing -> []
-  Just r -> [r]
-concatAF f (ApAF m1 m2) = concatAF f m1 ++ concatAF f m2
-
-evalAF :: Applicative f => (forall a . m a -> f a) -> AF m a -> f a
-evalAF _ (PureAF a) = pure a
-evalAF f (PrimAF p) = f p
-evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
-
-------------------------------------------------------------------------------
+sendE :: Engine -> Packet a -> IO (Either Value a)
+sendE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 
 -- statements are internal single JavaScript statements, that can be
 -- transliterated trivially into JavaScript, or interpreted to give
@@ -272,6 +104,16 @@ data Stmt a where
   ProcedureStmt :: Int -> LT.Text -> Stmt Value
   ConstructorStmt :: RemoteValue -> LT.Text -> Stmt RemoteValue
   
+prepareStmtA :: Applicative f => f Int -> AF Primitive a -> f (AF Stmt a)
+prepareStmtA _  (PureAF a) = pure (pure a)
+prepareStmtA ug (PrimAF p) = PrimAF <$> prepareStmt ug p
+prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
+
+prepareStmt :: Applicative f => f Int -> Primitive a -> f (Stmt a)
+prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
+prepareStmt ug (Procedure stmt)   = (\ i -> ProcedureStmt i stmt) <$> ug
+prepareStmt ug (Constructor stmt)   = (\ i -> ConstructorStmt (RemoteValue i) stmt) <$> ug
+
 showStmt :: Stmt a -> LT.Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
@@ -281,10 +123,6 @@ evalStmt :: Stmt a -> State [Value] a
 evalStmt (CommandStmt _)       = pure ()
 evalStmt (ProcedureStmt _ _)   = state $ \ (v:vs) -> (v,vs)
 evalStmt (ConstructorStmt c _) = pure c
-
--- TODO: Consider a wrapper around this Int
-procVar :: Int -> LT.Text
-procVar n = "v" <> LT.pack (show n)
 
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
 sendStmtA e af
@@ -322,4 +160,55 @@ sendStmtA e af
       [ LT.pack (show n)
       , "[" <> LT.intercalate "," (map procVar assignments) <> "]"
       ] <> ")"
+
+-- TODO: Consider a wrapper around this Int
+procVar :: Int -> LT.Text
+procVar n = "v" <> LT.pack (show n)
+
+------------------------------------------------------------------------------
+
+data RemoteValue = RemoteValue Int
+  deriving (Eq, Ord, Show)
+
+-- | generate the text for a RemoteValue
+var :: RemoteValue -> LT.Text
+var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
+
+-- | 'delete' a remote value.
+delete :: Remote f => RemoteValue -> f ()
+delete rv = command $ "delete " <> var rv
+
+------------------------------------------------------------------------------
+
+data JavaScriptException = JavaScriptException Value
+    deriving Show
+
+instance Exception JavaScriptException
+
+------------------------------------------------------------------------------
+-- Framework types for Applicative and Monad
+
+data AF :: (* -> *) -> * -> * where
+ PureAF :: a -> AF m a
+ PrimAF :: m a -> AF m a
+ ApAF :: AF m (a -> b) -> AF m a -> AF m b
+
+instance Functor (AF m) where
+  fmap f g = pure f <*> g
+  
+instance Applicative (AF m) where
+  pure = PureAF
+  (<*>) = ApAF
+
+concatAF :: (forall a . m a -> Maybe b) -> AF m a -> [b]
+concatAF f (PureAF _) = []
+concatAF f (PrimAF p) = case f p of
+  Nothing -> []
+  Just r -> [r]
+concatAF f (ApAF m1 m2) = concatAF f m1 ++ concatAF f m2
+
+evalAF :: Applicative f => (forall a . m a -> f a) -> AF m a -> f a
+evalAF _ (PureAF a) = pure a
+evalAF f (PrimAF p) = f p
+evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
 

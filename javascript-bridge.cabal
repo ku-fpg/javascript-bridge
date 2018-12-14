@@ -25,7 +25,8 @@ source-repository head
   location:            https://github.com/ku-fpg/javascript-bridge
 
 library
-  exposed-modules:     Network.JavaScript
+  exposed-modules:     Network.JavaScript,
+                       Network.JavaScript.Services 
   -- other-modules:
   -- other-extensions:
   build-depends:       base                 >= 4.8     && < 4.13
