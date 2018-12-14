@@ -171,7 +171,7 @@ example e = do
         write e "<ul><li>send $ constructor \"Hello\" work</li></ul>"
         
         -- hard wired to 40, from observation
-        assert e (return (show rv)) "RemoteValue 40 0"
+        assert e (return (show rv)) "RemoteValue 23"
 
         -- force reading of this remote value (not possible in general)
         v6 :: Result String <- JS.send e $

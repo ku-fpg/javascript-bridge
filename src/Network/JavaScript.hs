@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings,KindSignatures, GADTs, ScopedTypeVariables #-}
-
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
 module Network.JavaScript
   ( -- * Applicative Packets of JavaScript
     Packet
@@ -21,7 +23,7 @@ module Network.JavaScript
   , Engine
   ) where
 
-import Control.Applicative((<|>))
+import Control.Applicative((<|>),liftA2)
 import Control.Exception(Exception)
 import Control.Exception as Exception
 import Data.Monoid ((<>))
@@ -39,30 +41,22 @@ import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
 
 -- | Deep embedding of an applicative packet
-data Packet :: * -> * where
-  Pure      :: a       -> Packet a
-  Ap        ::            Packet (a -> b)
-                       -> Packet a
-                       -> Packet b
-  Command   :: LT.Text -> Packet ()
-  Procedure :: LT.Text -> Packet Value
-  Constructor :: LT.Text -> Packet RemoteValue
+newtype Packet a = Packet (AF Primitive a)
+  deriving (Functor, Applicative)
 
-data RemoteValue = RemoteValue Int Int
+data Primitive :: * -> * where
+  Command   :: LT.Text -> Primitive ()
+  Procedure :: LT.Text -> Primitive Value
+  Constructor :: LT.Text -> Primitive RemoteValue
+
+data RemoteValue = RemoteValue Int
   deriving (Eq, Ord, Show)
 
 var :: RemoteValue -> LT.Text
-var (RemoteValue n u) = "jsb.c" <> LT.pack (show n) <> "_" <> LT.pack (show u)
+var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
 
 incRemoteValue :: RemoteValue -> RemoteValue
 incRemoteValue rv = rv
-
-instance Functor Packet where
-  fmap f m = Pure f `Ap` m
-
-instance Applicative Packet where
-  pure = Pure
-  (<*>) = Ap
 
 -- | This accepts WebSocket requests.
 --
@@ -156,35 +150,8 @@ bootstrap =   LT.unlines
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-
 addListener :: Engine -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
-
--- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
---   Should never throw an exception, which is reported to console.log.
-
-command :: LT.Text -> Packet ()
-command = Command
-
--- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
---   Should never throw an exception, but any exceptions are returned to the 'send'
---   as Haskell exceptions.
---
---   Procedures can return Promises. Before completing the transaction, all the values
---   for all the procedures that are promises are fulfilled (using Promises.all).
---
---  If a procedure throws an exception, future commands and procedures in
---  the same packet will not be executed. Use promises to allow all commands and
---  procedures to be invoked, if needed.
-
-procedure :: LT.Text -> Packet Value
-procedure = Procedure
-
-constructor :: LT.Text -> Packet RemoteValue
-constructor = Constructor
-
-delete :: RemoteValue -> Packet ()
-delete rv = command $ "delete " <> var rv
 
 send :: Engine -> Packet a -> IO a
 send e p = do
@@ -194,88 +161,17 @@ send e p = do
     Left err -> throwIO $ JavaScriptException err
 
 sendE :: Engine -> Packet a -> IO (Either Value a)
-sendE engine ps = do
-    nonce <- genNonce engine
-    let start = RemoteValue nonce 0
-    let (_,(_,stmts,_)) = runState (genPacket ps) (0,[],start)
-    go stmts start nonce
-  where
-    -- generate the packet to be sent
-    genPacket :: Packet a -> State (Int,[PacketStmt],RemoteValue) ()
-    genPacket Pure{}           = return ()
-    genPacket (Ap g h)         = genPacket g *> genPacket h
-    genPacket (Command stmt)   =
-      modify $ \ (n,ss,rv) -> (n,CommandStmt stmt : ss,rv)
-    genPacket (Procedure stmt) =
-      modify $ \ (n,ss,rv) -> (n+1,ProcedureStmt n stmt : ss,rv)
-    genPacket (Constructor stmt) =
-      modify $ \ (n,ss,rv) -> (n,ConstructorStmt rv stmt : ss, incRemoteValue rv)
+sendE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 
-    go stmts start nonce
-       | null assignments = do
-           sendText engine $ serialize stmts
-           return $ Right $ evalState (patchReplies ps) ([],start)
-       | otherwise = do
-           sendText engine $ catchMe nonce $ serialize stmts
-           theReply <- replyBox engine nonce
-           case theReply of
-             Right replies -> return $ Right $ evalState (patchReplies ps) (replies,start)
-             Left err -> return $ Left err
-      where
-        catchMe :: Int -> LT.Text -> LT.Text
-        catchMe nonce txt =
-          "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <>
-          reply nonce <> ";"
+prepareStmtA :: Applicative f => f Int -> AF Primitive a -> f (AF Stmt a)
+prepareStmtA _  (PureAF a) = pure (pure a)
+prepareStmtA ug (PrimAF p) = PrimAF <$> prepareStmt ug p
+prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
 
-        serialize :: [PacketStmt] -> LT.Text
-        serialize = LT.concat . map showStmt . reverse
-
-        assignments :: [LT.Text]
-        assignments =
-          [ v
-          | a <- reverse stmts
-          , v <- case a of
-                   ProcedureStmt i _ -> [procVar i]
-                   _ -> []
-          ]
-        -- generate the call to reply (as a final command)
-        reply :: Int -> LT.Text
-        reply n =
-          "reply(" <> LT.intercalate ","
-          [ LT.pack (show n)
-          , "[" <> LT.intercalate "," assignments <> "]"
-          ] <> ")"
-
-        patchReplies :: Packet a -> State ([Value],RemoteValue) a
-        patchReplies (Pure a)    = return a
-        patchReplies (Ap g h)    = patchReplies g <*> patchReplies h
-        patchReplies Command{}   = return ()
-        patchReplies Procedure{} = popValue
-        patchReplies Constructor{} = popRemoteValue
-      
-        popRemoteValue :: State ([Value],RemoteValue) RemoteValue
-        popRemoteValue = state $ \ (vs,rv) -> (rv,(vs,incRemoteValue rv))
-
-        popValue :: State ([Value],RemoteValue) Value
-        popValue = state $ \ (vs,rv) -> case vs of
-                                     [] -> error "run out of result arguments"
-                                     (v:vs') -> (v,(vs',rv))
-
-
-
-data PacketStmt
-   = CommandStmt       LT.Text
-   | ProcedureStmt Int LT.Text
-   | ConstructorStmt RemoteValue LT.Text
- deriving Show
-
-showStmt :: PacketStmt -> LT.Text
-showStmt (CommandStmt cmd)     = cmd <> ";"
-showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
-showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
-
-procVar :: Int -> LT.Text
-procVar n = "v" <> LT.pack (show n)
+prepareStmt :: Applicative f => f Int -> Primitive a -> f (Stmt a)
+prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
+prepareStmt ug (Procedure stmt)   = (\ i -> ProcedureStmt i stmt) <$> ug
+prepareStmt ug (Constructor stmt)   = (\ i -> ConstructorStmt (RemoteValue i) stmt) <$> ug
 
 ------------------------------------------------------------------------------
 
@@ -302,3 +198,128 @@ data JavaScriptException = JavaScriptException Value
     deriving Show
 
 instance Exception JavaScriptException
+
+------------------------------------------------------------------------------
+
+class Remote f where
+  -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
+  --   Should never throw an exception, which may be reported to console.log.
+  command :: LT.Text -> f ()
+  -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
+  --   Should never throw an exception, but any exceptions are returned to the 'send'
+  --   as Haskell exceptions.
+  --
+  --   Procedures can return Promises. Before completing the transaction, all the values
+  --   for all the procedures that are promises are fulfilled (using Promises.all).
+  --
+  --  If a procedure throws an exception, future commands and procedures in
+  --  the same packet will not be executed. Use promises to allow all commands and
+  --  procedures to be invoked, if needed.
+  procedure :: LT.Text -> f Value
+  -- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
+  --   Should never throw an exception, but any exceptions are returned to the 'send'
+  --   as Haskell exceptions.
+  --
+  --   The value returned in not returned to Haskell. Instead, a handle is returned,
+  --   that can be used to access the remote value. Examples of remote values include
+  --   objects that can not be serialized, or values that are too large to serialize.
+  constructor :: LT.Text -> f RemoteValue  
+
+-- | 'delete' a remote value.
+delete :: Remote f => RemoteValue -> f ()
+delete rv = command $ "delete " <> var rv
+
+instance Remote Packet where
+  command = Packet . PrimAF . Command  
+  procedure = Packet . PrimAF . Procedure
+  constructor = Packet . PrimAF . Constructor
+
+------------------------------------------------------------------------------
+-- Framework types for Applicative and Monad
+
+data AF :: (* -> *) -> * -> * where
+ PureAF :: a -> AF m a
+ PrimAF :: m a -> AF m a
+ ApAF :: AF m (a -> b) -> AF m a -> AF m b
+
+instance Functor (AF m) where
+  fmap f g = pure f <*> g
+  
+instance Applicative (AF m) where
+  pure = PureAF
+  (<*>) = ApAF
+
+concatAF :: (forall a . m a -> Maybe b) -> AF m a -> [b]
+concatAF f (PureAF _) = []
+concatAF f (PrimAF p) = case f p of
+  Nothing -> []
+  Just r -> [r]
+concatAF f (ApAF m1 m2) = concatAF f m1 ++ concatAF f m2
+
+evalAF :: Applicative f => (forall a . m a -> f a) -> AF m a -> f a
+evalAF _ (PureAF a) = pure a
+evalAF f (PrimAF p) = f p
+evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
+
+------------------------------------------------------------------------------
+
+-- statements are internal single JavaScript statements, that can be
+-- transliterated trivially into JavaScript, or interpreted to give
+-- a remote effect, including result.
+
+data Stmt a where
+  CommandStmt   :: LT.Text -> Stmt ()
+  ProcedureStmt :: Int -> LT.Text -> Stmt Value
+  ConstructorStmt :: RemoteValue -> LT.Text -> Stmt RemoteValue
+  
+showStmt :: Stmt a -> LT.Text
+showStmt (CommandStmt cmd)     = cmd <> ";"
+showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
+showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
+
+evalStmt :: Stmt a -> State [Value] a
+evalStmt (CommandStmt _)       = pure ()
+evalStmt (ProcedureStmt _ _)   = state $ \ (v:vs) -> (v,vs)
+evalStmt (ConstructorStmt c _) = pure c
+
+-- TODO: Consider a wrapper around this Int
+procVar :: Int -> LT.Text
+procVar n = "v" <> LT.pack (show n)
+
+sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
+sendStmtA e af
+    | null assignments = do
+        sendText e serialized
+        return $ Right $ evalState (evalAF evalStmt af) []
+    | otherwise = do
+        nonce <- genNonce e
+        sendText e $ catchMe nonce serialized
+        theReply <- replyBox e nonce
+        case theReply of
+          Right replies -> return $ Right $ evalState (evalAF evalStmt af) replies
+          Left err -> return $ Left err
+        
+  where
+    catchMe :: Int -> LT.Text -> LT.Text
+    catchMe nonce txt =
+      "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <>
+      reply nonce <> ";"
+
+    assignments :: [Int]
+    assignments = concatAF findAssign af
+
+    findAssign :: Stmt a -> Maybe Int
+    findAssign (ProcedureStmt i _) = Just i
+    findAssign _ = Nothing
+    
+    serialized :: LT.Text
+    serialized = LT.concat $ concatAF (return . showStmt) af
+
+    -- generate the call to reply (as a final command)
+    reply :: Int -> LT.Text
+    reply n =
+      "reply(" <> LT.intercalate ","
+      [ LT.pack (show n)
+      , "[" <> LT.intercalate "," (map procVar assignments) <> "]"
+      ] <> ")"
+
