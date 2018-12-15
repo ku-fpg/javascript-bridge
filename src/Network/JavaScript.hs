@@ -85,6 +85,10 @@ class RemoteProcedure f where
   --  the same packet will not be executed. Use promises to allow all commands and
   --  procedures to be invoked, if needed.
   procedure :: LT.Text -> f Value
+  
+-- | A sync will always flush the send queue.
+sync :: (Monad f, RemoteProcedure f) => f ()
+sync = procedure "null" >>= \ Null -> return ()
 
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
