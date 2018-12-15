@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Network.JavaScript
   ( -- * Remote Applicative Packets of JavaScript
     Remote
@@ -9,6 +10,7 @@ module Network.JavaScript
   , command
   , procedure
   , constructor
+  , function
     -- * sending Packets
   , send
   , sendE
@@ -46,6 +48,7 @@ import qualified Data.Aeson.Encoding.Internal as AI
 import qualified Data.Binary.Builder as B
 import qualified Data.IntMap.Strict as IM
 
+
 import Network.JavaScript.Services
 
 ------------------------------------------------------------------------------
@@ -74,6 +77,11 @@ class Remote f where
   --   objects that can not be serialized, or values that are too large to serialize.
   constructor :: LT.Text -> f RemoteValue  
 
+  -- | a 'function' takes a Haskell function, and converts
+  --   it into a JavaScript function. This can be used to 
+  --   generate first-class functions, for passing as arguments.
+  function :: ToJSON r => (RemoteValue -> Packet r) -> f RemoteValue
+
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
   deriving (Functor, Applicative)
@@ -82,11 +90,13 @@ data Primitive :: * -> * where
   Command   :: LT.Text -> Primitive ()
   Procedure :: LT.Text -> Primitive Value
   Constructor :: LT.Text -> Primitive RemoteValue
+  Function :: ToJSON r => (RemoteValue -> Packet r) -> Primitive RemoteValue
 
 instance Remote Packet where
   command = Packet . PrimAF . Command  
   procedure = Packet . PrimAF . Procedure
   constructor = Packet . PrimAF . Constructor
+  function = Packet . PrimAF . Function
 
 ------------------------------------------------------------------------------
 
@@ -113,38 +123,72 @@ data Stmt a where
   CommandStmt   :: LT.Text -> Stmt ()
   ProcedureStmt :: Int -> LT.Text -> Stmt Value
   ConstructorStmt :: RemoteValue -> LT.Text -> Stmt RemoteValue
+
+deriving instance Show (Stmt a)
   
-prepareStmtA :: Applicative f => f Int -> AF Primitive a -> f (AF Stmt a)
+prepareStmtA :: Monad f => f Int -> AF Primitive a -> f (AF Stmt a)
 prepareStmtA _  (PureAF a) = pure (pure a)
 prepareStmtA ug (PrimAF p) = PrimAF <$> prepareStmt ug p
 prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
 
-prepareStmt :: Applicative f => f Int -> Primitive a -> f (Stmt a)
+prepareStmt :: Monad f => f Int -> Primitive a -> f (Stmt a)
 prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
-prepareStmt ug (Procedure stmt)   = (\ i -> ProcedureStmt i stmt) <$> ug
-prepareStmt ug (Constructor stmt)   = (\ i -> ConstructorStmt (RemoteValue i) stmt) <$> ug
+prepareStmt ug (Procedure stmt)   = ug >>= \ i -> pure $ ProcedureStmt i stmt
+prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
+prepareStmt ug (Function k) = do
+  i <- ug
+  let a0 = RemoteArgument i
+  let Packet f = k a0
+  ss <- prepareStmtA ug $ f 
+  case evalStmtA ss [] of
+    Nothing -> error "procedure inside function"
+    Just a -> do
+      j <- ug
+      -- Technically, we can handle a single procedure,
+      -- as the final primitive, but using return (..the prim..).
+      let funWrapper xs = "function(" <> val a0 <> "){" <> xs <> "return " <> val a <> ";}"
+      return $ ConstructorStmt (RemoteValue j)
+             $ funWrapper
+             $ serializeA ss
+   
+showStmtA :: AF Stmt a -> LT.Text
+showStmtA = LT.concat . concatAF (return . showStmt)
 
 showStmt :: Stmt a -> LT.Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
 showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
 
-evalStmt :: Stmt a -> State [Value] a
+evalStmtA :: AF Stmt a -> [Value] -> Maybe a
+evalStmtA af st = evalStateT (evalAF evalStmt af) st
+
+evalStmt :: Stmt a -> StateT [Value] Maybe a
 evalStmt (CommandStmt _)       = pure ()
-evalStmt (ProcedureStmt _ _)   = state $ \ (v:vs) -> (v,vs)
+evalStmt (ProcedureStmt _ _)   = do
+  vs <- get
+  case vs of
+    (v:vs') -> put vs' >> return v
+    _ -> fail "not enough values"
 evalStmt (ConstructorStmt c _) = pure c
+
+serializeA :: AF Stmt a -> LT.Text
+serializeA = LT.concat . concatAF (return . showStmt)
 
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
 sendStmtA e af
     | null assignments = do
-        sendText e serialized
-        return $ Right $ evalState (evalAF evalStmt af) []
+        sendText e $ serializeA af
+        return $ case evalStmtA af [] of
+            Nothing -> error "internal failure"
+            Just r -> Right r        
     | otherwise = do
         nonce <- genNonce e
-        sendText e $ catchMe nonce serialized
+        sendText e $ catchMe nonce $ serializeA af
         theReply <- replyBox e nonce
         case theReply of
-          Right replies -> return $ Right $ evalState (evalAF evalStmt af) replies
+          Right replies -> return $ case evalStmtA af replies of
+            Nothing -> error "internal failure"
+            Just r -> Right r
           Left err -> return $ Left err
         
   where
@@ -160,9 +204,6 @@ sendStmtA e af
     findAssign (ProcedureStmt i _) = Just i
     findAssign _ = Nothing
     
-    serialized :: LT.Text
-    serialized = LT.concat $ concatAF (return . showStmt) af
-
     -- generate the call to reply (as a final command)
     reply :: Int -> LT.Text
     reply n =
@@ -179,6 +220,7 @@ procVar n = "v" <> LT.pack (show n)
 
 -- A Local handle into a remote value.
 data RemoteValue = RemoteValue Int
+                 | RemoteArgument Int
   deriving (Eq, Ord, Show)
 
 -- Remote values can not be encoded in JSON, but are JavaScript variables.
@@ -193,6 +235,7 @@ val = decodeUtf8 . encode
 -- | generate the text for a RemoteValue
 var :: RemoteValue -> LT.Text
 var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
+var (RemoteArgument n) = "a" <> LT.pack (show n)
 
 -- | 'delete' a remote value.
 delete :: Remote f => RemoteValue -> f ()

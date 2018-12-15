@@ -168,7 +168,7 @@ example e = do
 
         rv :: JS.RemoteValue <- JS.send e $
               JS.constructor "\"Hello\""
-        write e "<ul><li>send $ constructor \"Hello\" work</li></ul>"
+        write e "<ul><li>send $ constructor \"Hello\" works</li></ul>"
         
         -- hard wired to 40, from observation
         assert e (return (show rv)) "RemoteValue 23"
@@ -224,6 +224,18 @@ example e = do
             exitFailure
           Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
 
+
+        write e "<h3>Higher Order Function</h3>"
+
+        rv :: RemoteValue <- JS.send e $ JS.function $ \ v -> pure v
+        write e "<ul><li>send $ function $ id works</li></ul>"
+
+        assert e (return (show rv)) "RemoteValue 39"
+
+        v :: Result Int <- JS.send e $ fromJSON <$> JS.procedure (val rv <> "(4)");
+        write e "<ul><li>send $ procedure (rv(4))</li></ul>"
+
+        assert e v (4 :: Int)
 
         write e "<h3>Events</h3>"
 
