@@ -57,17 +57,6 @@ class Remote f where
   -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, which may be reported to console.log.
   command :: LT.Text -> f ()
-  -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
-  --   Should never throw an exception, but any exceptions are returned to the 'send'
-  --   as Haskell exceptions.
-  --
-  --   Procedures can return Promises. Before completing the transaction, all the values
-  --   for all the procedures that are promises are fulfilled (using Promises.all).
-  --
-  --  If a procedure throws an exception, future commands and procedures in
-  --  the same packet will not be executed. Use promises to allow all commands and
-  --  procedures to be invoked, if needed.
-  procedure :: LT.Text -> f Value
   -- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, but any exceptions are returned to the 'send'
   --   as Haskell exceptions.
@@ -80,7 +69,22 @@ class Remote f where
   -- | a 'function' takes a Haskell function, and converts
   --   it into a JavaScript function. This can be used to 
   --   generate first-class functions, for passing as arguments.
-  function :: ToJSON r => (RemoteValue -> Packet r) -> f RemoteValue
+  function :: ToJSON r
+           => (forall g . (Applicative g, Remote g) => RemoteValue -> g r)
+           -> f RemoteValue
+
+class RemoteProcedure f where
+  -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
+  --   Should never throw an exception, but any exceptions are returned to the 'send'
+  --   as Haskell exceptions.
+  --
+  --   Procedures can return Promises. Before completing the transaction, all the values
+  --   for all the procedures that are promises are fulfilled (using Promises.all).
+  --
+  --  If a procedure throws an exception, future commands and procedures in
+  --  the same packet will not be executed. Use promises to allow all commands and
+  --  procedures to be invoked, if needed.
+  procedure :: LT.Text -> f Value
 
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -90,13 +94,17 @@ data Primitive :: * -> * where
   Command   :: LT.Text -> Primitive ()
   Procedure :: LT.Text -> Primitive Value
   Constructor :: LT.Text -> Primitive RemoteValue
-  Function :: ToJSON r => (RemoteValue -> Packet r) -> Primitive RemoteValue
+  Function :: ToJSON r
+           => (forall g . (Applicative g, Remote g) => RemoteValue -> g r)
+           -> Primitive RemoteValue
 
 instance Remote Packet where
   command = Packet . PrimAF . Command  
-  procedure = Packet . PrimAF . Procedure
   constructor = Packet . PrimAF . Constructor
-  function = Packet . PrimAF . Function
+  function k = Packet $ PrimAF $ Function k
+
+instance RemoteProcedure Packet where
+  procedure = Packet . PrimAF . Procedure
 
 ------------------------------------------------------------------------------
 
@@ -141,7 +149,7 @@ prepareStmt ug (Function k) = do
   let Packet f = k a0
   ss <- prepareStmtA ug $ f 
   case evalStmtA ss [] of
-    Nothing -> error "procedure inside function"
+    Nothing -> error "procedure inside function (should never happen)"
     Just a -> do
       j <- ug
       -- Technically, we can handle a single procedure,
