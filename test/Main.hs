@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
-
+{-# LANGUAGE RecordWildCards #-}
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -24,251 +24,200 @@ main = do
 
 
           get "/" $ do
-            html $ mconcat
-               [ "<body>"
+            html $ mconcat $
+               [ "<head>"
+                 -- From https://www.w3.org/Style/Examples/007/leaders.en.html
+               , "<style type=\"text/css\">"
+               , "ul.leaders {"
+               , "max-width: 40em;"
+               , "padding: 0;"
+               , "overflow-x: hidden;"
+               , "list-style: none}"
+               , "ul.leaders li:before {"
+               , "float: left;"
+               , "width: 0;"
+               , "white-space: nowrap;"
+               , "content:"
+               , "\". . . . . . . . . . . . . . . . . . . . \""
+               , "\". . . . . . . . . . . . . . . . . . . . \""
+               , "\". . . . . . . . . . . . . . . . . . . . \""
+               , "\". . . . . . . . . . . . . . . . . . . . \"}"
+               , "ul.leaders span:first-child {"
+               , "padding-right: 0.33em;"
+               , "background: white}"
+               , "ul.leaders span + span {"
+               , "float: right;"
+               , "padding-left: 0.33em;"
+               , "background: white}"
+               , "span.pass{color: green;}"
+               , "span.fail{color: red;}"
+               , "</style>"
+               , "</head>"
+               , "<body>"
                ,   "<h1>JavaScript Bridge Tests</h1>"
-               ,    "<h3>First Send</h3>"
-               ,    "<ul><li id='send-command'><i style='color: #ff0000'>waiting for send $ command</i></li></ul>"
-               ,   "<div id='cursor'>"
-                 -- Include this code in your page
+               , T.pack (table tests) 
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://' + location.host + '/');"
-               ,     "jsb.onmessage = (evt) => eval(evt.data);"               
+               ,     "jsb.onmessage = (evt) => eval(evt.data);"
+                    -- remote object to allow interesting commands and procedures
+               ,     "var remote = [];"
                ,   "</script>"
                , "</body>"
                ]
 
         takeMVar lock
 
---type E = 
+data Test
+ = Group String [Test]
+ | TestA String (forall f . (RemoteProcedure f, Applicative f) => API f -> IO (Maybe String))
+ | TestM String (forall f . (RemoteProcedure f, Monad f)       => API f -> IO (Maybe String))
 
-write :: (RemoteProcedure f, Applicative f) => (forall a . f a -> IO a) -> String -> IO ()
-write sendMe txt = sendMe $ jsWriteTo "cursor" txt
+data API f = API
+ { send :: forall a . f a -> IO a
+ , recv :: IO (Result Value)
+ }
 
-jsWriteTo :: Remote f => String -> String -> f ()
-jsWriteTo i txt = command ("document.getElementById('" <> T.pack i <> "').innerHTML += " <> T.pack (show txt))
+------------------------------------------------------------------------------
 
-writeTo :: Engine -> String -> String -> IO ()
-writeTo e i txt = send e $ command ("document.getElementById('" <> T.pack i <> "').innerHTML = " <> T.pack (show txt))
-
-scroll :: Engine -> String -> IO ()
-scroll e i = send e $ command $ "document.getElementById('" <> T.pack i <> "').scrollIntoView({behavior: 'smooth', block: 'end'})"
-
-assert :: (Eq a, Show a) => Engine -> Result a -> a -> IO ()
-assert e (Error er) _ = do
-  write (sendA e) $ "<ul><li><span style='color: red'>Failed to parse result: " ++ show er ++ "</span></ul></li>"
-  exitFailure
-assert e (Success n) g
-   | n == g = do
-       write (sendA e) $ "<ul><li>result parsed as " ++ show n ++ ", and is correct</li></ul>"
-       scroll e "cursor"
-   | otherwise = do
-       write (sendA e) $ "<ul><li><span style='color: red'>unexpected result : '" ++ show n ++ "'</span></li></ul>"
-       exitFailure
-
-example :: Engine -> IO ()
-example e = do
-        es <- newTChanIO
-        addListener e $ atomically . writeTChan es
-
-        pid <- forkIO $ forever $ do
-          ev <- atomically $ readTChan es
-          print ("Unexpected event"::String,ev::Value)
-
-        -- First test of send command
-        writeTo e "send-command" "send $ command ... works"
-        scroll e "cursor"
-
-        write (sendA e) "<h2>Testing using (Applicative) Packet</h2>"
-        basic e $ sendA e
-
-        write (sendA e) "<h2>Testing using Remote Monad</h2>"
-        basic e $ send e
-
-        write (sendA e) "<h3>Events</h3>"
-        killThread pid
-        
-        sendA e $ command ("event('Hello, World')");
-
-        write (sendA e) "<ul><li>sendA $ command $ event 'Hello, World'</li></ul>"
-        wait <- registerDelay $ 1000 * 1000
-        event :: Result String
-              <- atomically $ (fromJSON <$> readTChan es)
-                     `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")
-
-        assert e event ("Hello, World" :: String)
-
-        write (sendA e) "<h3>Testing staying alive</h3>"
-
-        let w = 80
-        
-        write (sendA e) $ "<ul><li>waiting " ++ show w ++ " seconds...</li></ul>"
-        scroll e "cursor"
-        _ <- threadDelay $ w * 1000 * 1000
-        write (sendA e) $ "<ul><li>Waited. Connection still alive!</li></ul>"
-
-        write (sendA e) $ "<ul><li>Sending trivial procedure test</li></ul>"
-        v1 :: Value <- sendA e (procedure "1 + 1")
-        assert e (fromJSON v1) (2 :: Int)
-        
-        write (sendA e) "<h2>All Tests Pass</h2>"
-        scroll e "cursor"
-
-basic :: (RemoteProcedure f, Applicative f) => Engine -> (forall a . f a -> IO a) -> IO ()
-basic e sendMe = do
-
-        write sendMe "<h3>Sending Command</h3>"
-        write sendMe "<ul><li>sendMe $ command 1</li></ul>"
-        scroll e "cursor"
-        
-        -- We assume send command works; and test procedures
-        write sendMe "<h3>Sending Procedures</h3>"
-        v1 :: Value <- sendMe (procedure "1 + 1")
-        write sendMe "<ul><li>sendMe $ procedure (1+1) works</li></ul>"
-
-        assert e (fromJSON v1) (2 :: Int)
-
-        v2 :: Value <- sendMe (procedure "'Hello'")
-        write sendMe "<ul><li>sendMe $ procedure 'Hello' works</li></ul>"
-
-        assert e (fromJSON v2) ("Hello" :: String)
-
-        v3 :: Value <- sendMe (procedure "[true,false]")
-        write sendMe "<ul><li>sendMe $ procedure [true,false] works</li></ul>"
-
-        assert e (fromJSON v3) [True,False]
-
-        write sendMe "<h3>Sending Combine Commands</h3>"
-        sendMe $ 
-             jsWriteTo "cursor" "<ul id='combine-commands'></ul>" 
-          <* jsWriteTo "combine-commands" "<li>command 1</li>"        
-          <* jsWriteTo "combine-commands" "<li>command 2</li>"        
-
-        scroll e "cursor"
-
-        -- TODO: add test of returning a object with values, and an array.
-        write sendMe "<h3>Sending Combine Procedures</h3>"
-        v4 :: Result (Int,String,Bool) <- sendMe $ liftA3 (,,)
-          <$> (fromJSON <$> procedure "1 + 1")
-          <*> (fromJSON <$> procedure "'Hello'")
-          <*> (fromJSON <$> procedure "true")
-        sendMe $ 
-             jsWriteTo "cursor" "<ul id='combine-procs'></ul>" 
-          <* jsWriteTo "combine-procs" "<li>1+1</li>"        
-          <* jsWriteTo "combine-procs" "<li>'Hello'</li>"        
-          <* jsWriteTo "combine-procs" "<li>'True'</li>"
-  
-        assert e v4 (2,"Hello",True)
-
-        write sendMe "<h3>Sending Combine Commands and Procedures</h3>"
-
-        v5 :: Result (Int,String,Bool) <- sendMe $ liftA3 (,,)
-          <$> (fromJSON <$> procedure "1 + 1")
-          <*> (fromJSON <$> procedure "'Hello'")
-          <*> (fromJSON <$> procedure "true")
-          <* jsWriteTo "cursor" "<ul id='combine-comms-procs'></ul>" 
-          <* jsWriteTo "combine-comms-procs" "<li>1+1</li>"        
-          <* jsWriteTo "combine-comms-procs" "<li>'Hello'</li>"        
-          <* jsWriteTo "combine-comms-procs" "<li>'True'</li>"
-          <* jsWriteTo "combine-comms-procs" "<li>.. and 5 commands ...</li>"
-          
-        assert e v5 (2,"Hello",True)
-
-        write sendMe "<h3>Single Promise</h3>"
-
-        v6 :: Result String <- sendMe $
-              fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })"
-
-
-        assert e v6 "Hello"
-
-        write sendMe "<h3>Promises</h3>"
-
-        v7 :: Result (String,String) <- sendMe $ liftA2 (,)
+tests :: [Test]
+tests =
+  [ Group "Commands"
+    [ TestA "command" $ \ API{..} -> send (command "1") >> pure Nothing
+    ]
+  , Group "Procedures"
+    [ TestA "procedure 1 + 1" $ \ API{..} -> do
+        v :: Result Int <- fromJSON <$> send (procedure "1+1")
+        assert v (2 :: Int)
+    , TestA "procedure 'Hello'" $ \ API{..} -> do
+        v :: Result String <- fromJSON <$> send (procedure "'Hello'")
+        assert v ("Hello" :: String)
+    , TestA "procedure [true,false]" $ \ API{..} -> do
+        v :: Result [Bool] <- fromJSON <$> send (procedure "[true,false]")
+        assert v [True,False]
+    ]
+  , Group "Combine Commands / Procedure"
+    [ TestA "command [] + push" $ \ API{..} -> do
+        send (command "local = []" *> command "local.push(99)")        
+        v :: Result [Int] <- fromJSON <$> send (procedure "local")
+        assert v [99]
+    , TestA "command [] + push + procedure" $ \ API{..} -> do
+        v :: Result [Int] <- fromJSON <$> send (command "local = []" *> command "local.push(99)" *> procedure "local")
+        assert v [99]
+    , TestA "procedure + procedure" $ \ API{..} -> do
+        v :: Result (Int,Bool) <- send (liftA2 (,)
+                                            <$> (fromJSON <$> procedure "99")
+                                            <*> (fromJSON <$> procedure "false"))
+        assert v (99,False)
+    ]    
+  , Group "Promises"
+    [ TestA "promises" $ \ API{..} -> do
+        v :: Result (String,String) <- send $ liftA2 (,)
              <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
              <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('World') })")
-
-        assert e v7 ("Hello","World")
-
-        write sendMe "<h3>Sending Combine Commands and Procedures and Promises</h3>"
-
-        v8 :: Result (Int,String,Bool) <- sendMe $ liftA3 (,,)
-          <$> (fromJSON <$> procedure "1 + 1")
-          <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('World') })")
-          <*> (fromJSON <$> procedure "true")
-          <* jsWriteTo "cursor" "<ul id='combine-comms-procs'></ul>" 
-          <* jsWriteTo "combine-comms-procs" "<li>1+1</li>"        
-          <* jsWriteTo "combine-comms-procs" "<li>promise of 'World'</li>"        
-          <* jsWriteTo "combine-comms-procs" "<li>'True'</li>"
-          <* jsWriteTo "combine-comms-procs" "<li>.. and 5 commands ...</li>"
-
-        assert e v8 (2,"World",True)
-
-        write sendMe "<h3>Builder</h3>"
-
-        rv :: RemoteValue <- sendMe $
-              constructor "\"Hello\""
-        write sendMe "<ul><li>sendMe $ constructor \"Hello\" works</li></ul>"
-        
-        -- force reading of this remote value (not possible in general)
-        v6 :: Result String <- sendMe $
-              fromJSON <$> procedure (var rv)
-        write sendMe "<ul><li>sendMe $ procedure (var rv)</li></ul>"
-
-        sendMe $ delete rv
-        write sendMe "<ul><li>sendMe $ delete rv</li></ul>"
-
-        -- read after delete; should return Null
-        v6 :: Result Value <- sendMe $
-              fromJSON <$> procedure (var rv)
-        write sendMe "<ul><li>sendMe $ procedure (var rv) (again)</li></ul>"
-
-        assert e v6 Null
-
-        write sendMe "<h3>Exceptions</h3>"
-        sendMe $ command $ "throw 'Command Fail';"
-        write sendMe "<ul><li>sendMe $ command (throw ..) sent (result ignored)</li></ul>"
-        v9 :: Either JavaScriptException Value <- E.try $ sendMe $ procedure $ "(function(){throw 'Procedure Fail'})();"
-        scroll e "cursor"
-        write sendMe "<ul><li>sendMe $ procedure (throw ..) sent</li></ul>"
-        case v9 of
-          Right _ -> do
-            write sendMe "<ul><li style='color: red'>sendMe $ procedure (throw ..) replied with result </li></ul>"
-            exitFailure
-          Left (JavaScriptException v) -> assert e (fromJSON v) ("Procedure Fail" :: String)
-
-        v10 :: Either JavaScriptException (Result (String,String,String)) <- E.try $ sendMe $ liftA3 (,,)
+        assert v ("Hello","World")
+    , TestA "promise + procedure" $ \ API{..} -> do
+        v :: Result (String,String) <- send $ liftA2 (,)
+             <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
+             <*> (fromJSON <$> procedure "'World'")
+        assert v ("Hello","World")
+    , TestA "good and bad promises" $ \ API{..} -> do
+        v :: Either JavaScriptException (Result (String,String,String)) <- E.try $ send $ liftA3 (,,)
              <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
              <*> (fromJSON <$> procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
              <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('News') })")
+        assert (pure v) (Left $ JavaScriptException $ String "Promise Reject")        
+    ]
+  , Group "Constructors"
+    [ TestA "constructor" $ \ API{..} -> do
+        rv :: RemoteValue <- send $ constructor "'Hello'"
+        v1 :: Result String <- send $ fromJSON <$> procedure (var rv)
+        send $ delete rv        
+        v2 :: Value <- send $ procedure (var rv)
+        assert ((,) <$> v1 <*> pure v2) ("Hello",Null)
+    ]
+  , Group "Exceptions"
+    [ TestA "command throw" $ \ API{..} -> do
+        send $ command $ "throw 'Command Fail';"
+        assert (pure ()) ()
+    , TestA "procedure throw" $ \ API{..} -> do
+        v :: Either JavaScriptException Value <- E.try $ send $ procedure $ "(function(){throw 'Command Fail';})()"
+        assert (pure v) (Left $ JavaScriptException $ String "Command Fail")
+    ]
+  , Group "Functions"
+    [ TestA "function $ id" $ \ API{..} -> do
+        rv :: RemoteValue <- send $ function $ \ v -> pure v
+        v :: Result Int <- send $ fromJSON <$> procedure (val rv <> "(4)");
+        assert v (4 :: Int)
+    ]
+  , Group "Events"
+    [ TestA "event" $ \ API{..} -> do
+        send $ command ("event('Hello, World')");        
+        event <- recv 
+        assert event (String "Hello, World" :: Value)
+    ]
+  , Group "Alive Connection"
+    [ TestA "before wait" $ \ API{..} -> do
+        assert (pure ()) ()
+    , TestA "after wait for 80" $ \ API{..} -> do
+        send $ command ("event('Hello, World')");        
+        let w = 80
+        _ <- threadDelay $ w * 1000 * 1000
+        assert (pure ()) ()
+    ]
+  ]
 
-        write sendMe "<ul><li>sendMe $ procedure (3 promises, 1 rejected) sent</li></ul>"
-        case v10 of
-          Right _ -> do
-            write sendMe "<ul><li style='color: red'>sendMe $ procedure (throw ..) replied with result </li></ul>"
-            exitFailure
-          Left (JavaScriptException v) -> assert e (fromJSON v) ("Promise Reject" :: String)
+------------------------------------------------------------------------------
 
-        v11 :: Either Value (Result (String,String,String)) <- sendE e $ liftA3 (,,)
-             <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
-             <*> (fromJSON <$> procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
-             <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('News') })")
+assert :: (Eq a, Show a) => Result a -> a -> IO (Maybe String)
+assert (Error er)  _ = return $ Just $ show er
+assert (Success n) g
+  | n == g    = return $ Nothing
+  | otherwise = return $ Just $ show ("assert failure",n,g)
 
-        write sendMe "<ul><li>sendE $ procedure (3 promises, 1 rejected) sent</li></ul>"
-        case v11 of
-          Right _ -> do
-            write sendMe "<ul><li style='color: red'>sendE $ procedure (throw ..) replied with result </li></ul>"
-            exitFailure
-          Left v -> assert e (fromJSON v) ("Promise Reject" :: String)
+table :: [Test] -> String
+table ts = go0 [] ts 
+  where
+    go0 p ts = "<ul>" ++ concatMap (\ (t,n) -> go (n:p) t) (zip ts [0..]) ++ "</ul>"
 
+    go p (Group txt ts) = "<li>" ++ txt ++ "</li>" ++ go0 p ts
+    go p (TestA txt _) = "<li><span>" ++ txt ++ "</span>...." ++
+                       "<span><span id=\"" ++ tag p ++ "-m\">Monad</span>, " ++
+                       "<span id=\"" ++ tag p ++ "-a\">Applicative</span></span>"
+    go p (TestM txt _) = "<li><span>" ++ txt ++ "</span>...." ++
+                       "<span id=\"" ++ tag p ++ "-a\">Applicative</span>"
 
-        write sendMe "<h3>Higher Order Function</h3>"
+tag :: [Int] -> String
+tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 
-        rv :: RemoteValue <- sendMe $ function $ \ v -> pure v
-        write sendMe "<ul><li>sendMe $ function $ id works</li></ul>"
+runTest :: Engine -> [Int] -> Test -> IO ()
+runTest e p (Group txt ts) = runTests e p ts
+runTest e p (TestA txt k) = do
+  recv <- doRecv e
+  doTest (API (JS.send e) recv)  "-m" p k
+  doTest (API (JS.sendA e) recv) "-a" p k
+runTest e p (TestM txt k) = do
+  recv <- doRecv e
+  doTest (API (JS.send e) recv)  "-m" p k
 
-        v :: Result Int <- sendMe $ fromJSON <$> procedure (val rv <> "(4)");
-        write sendMe "<ul><li>sendMe $ procedure (rv(4))</li></ul>"
+doRecv :: Engine -> IO (IO (Result Value))
+doRecv e = do
+  es <- newTChanIO
+  setListener e $ atomically . writeTChan es
+  return $ do
+        wait <- registerDelay $ 1000 * 1000
+        atomically $ (pure <$> readTChan es)
+                     `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")        
+doTest :: Remote f => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
+doTest api@API{..} suff p k = do
+  rM <- k api
+  case rM of
+    Nothing -> send $ command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('pass');"
+    Just msg -> do
+      print ("doTest failed"::String,msg)
+      send $ command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('fail');"
 
-        assert e v (4 :: Int)
+runTests :: Engine -> [Int] -> [Test] -> IO ()
+runTests e p ts = sequence_ [ runTest e (n:p) t | (t,n) <- ts `zip` [0..]]
 
+example :: Engine -> IO ()
+example e = runTests e [] tests
