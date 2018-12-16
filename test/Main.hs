@@ -5,7 +5,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (forever)
+import Control.Monad (forever, foldM)
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -155,10 +155,26 @@ tests =
         event <- recv 
         assert event (String "Hello, World" :: Value)
     ]
+  , Group "Remote Monad"
+    [ TestM "remote monad procedure chain" $ \ API{..} -> do
+        vs :: Result Int <- fromJSON <$>
+          (send $ foldM (\ (r :: Value) (i :: Int) -> procedure $ val r <> "+" <> val i)
+                           (toJSON (0 :: Int))
+                           [0..100])
+        assert vs (sum [0..100])
+    , TestM "remote monad constructor chain" $ \ API{..} -> do
+        rv <- send $ constructor "0"
+        rv :: RemoteValue <- 
+          (send $ foldM (\ (r :: RemoteValue) (i :: Int) -> constructor $ val r <> "+" <> val i)
+                           rv
+                           [0..100])
+        v :: Result Int <- fromJSON <$> (send $ procedure $ val rv)
+        assert v (sum [0..100])
+    ]
   , Group "Alive Connection"
-    [ TestA "before wait" $ \ API{..} -> do
+    [ TestM "before wait" $ \ API{..} -> do
         assert (pure ()) ()
-    , TestA "after wait for 80" $ \ API{..} -> do
+    , TestM "after wait for 80" $ \ API{..} -> do
         send $ command ("event('Hello, World')");        
         let w = 80
         _ <- threadDelay $ w * 1000 * 1000
@@ -184,7 +200,7 @@ table ts = go0 [] ts
                        "<span><span id=\"" ++ tag p ++ "-m\">Monad</span>, " ++
                        "<span id=\"" ++ tag p ++ "-a\">Applicative</span></span>"
     go p (TestM txt _) = "<li><span>" ++ txt ++ "</span>...." ++
-                       "<span id=\"" ++ tag p ++ "-a\">Applicative</span>"
+                       "<span id=\"" ++ tag p ++ "-m\">Monad</span>"
 
 tag :: [Int] -> String
 tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
