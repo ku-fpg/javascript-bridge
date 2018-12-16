@@ -137,7 +137,7 @@ send e p = do
     Left err -> throwIO $ JavaScriptException err
 
 data JavaScriptException = JavaScriptException Value
-    deriving Show
+    deriving (Show,Eq)
 
 instance Exception JavaScriptException
 
