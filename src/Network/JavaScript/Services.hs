@@ -7,6 +7,7 @@ module Network.JavaScript.Services
     Engine(..)
   , start
   , addListener
+  , setListener
   ) where
 
 import Control.Applicative((<|>),liftA2)
@@ -119,6 +120,9 @@ bootstrap =   LT.unlines
 --   values to this listener. Any valid JSON value can be sent.
 addListener :: Engine -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
+
+setListener :: Engine -> (Value -> IO ()) -> IO ()
+setListener engine k = atomically $ modifyTVar (listener engine) $ const k
 
 ------------------------------------------------------------------------------
 

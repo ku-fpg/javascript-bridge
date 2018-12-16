@@ -26,7 +26,8 @@ module Network.JavaScript
     -- * Events
   , JavaScriptException(..)
   , addListener
-    -- * Web services
+  , setListener
+  -- * Web services
   , start
   , Engine
   ) where
