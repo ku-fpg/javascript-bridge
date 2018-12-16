@@ -3,16 +3,20 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -w #-}
 module Network.JavaScript
   ( -- * Remote Applicative Packets of JavaScript
     Remote
   , Packet
+  , RemoteMonad
+  , RemoteProcedure
   , command
   , procedure
   , constructor
   , function
     -- * sending Packets
   , send
+  , sendA
   , sendE
     -- * Remote and Local Values
   , RemoteValue
@@ -73,7 +77,7 @@ class Remote f where
            => (forall g . (Applicative g, Remote g) => RemoteValue -> g r)
            -> f RemoteValue
 
-class RemoteProcedure f where
+class Remote f => RemoteProcedure f where
   -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, but any exceptions are returned to the 'send'
   --   as Haskell exceptions.
@@ -94,6 +98,10 @@ sync = procedure "null" >>= \ Null -> return ()
 newtype Packet a = Packet (AF Primitive a)
   deriving (Functor, Applicative)
 
+-- | Deep embedding of an applicative packet
+newtype RemoteMonad a = RemoteMonad (M Primitive a)
+  deriving (Functor, Applicative, Monad)
+
 data Primitive :: * -> * where
   Command   :: LT.Text -> Primitive ()
   Procedure :: LT.Text -> Primitive Value
@@ -110,9 +118,17 @@ instance Remote Packet where
 instance RemoteProcedure Packet where
   procedure = Packet . PrimAF . Procedure
 
+instance Remote RemoteMonad where
+  command = RemoteMonad . PrimM . Command  
+  constructor = RemoteMonad . PrimM . Constructor
+  function k = RemoteMonad $ PrimM $ Function k
+
+instance RemoteProcedure RemoteMonad where
+  procedure = RemoteMonad . PrimM . Procedure  
+
 ------------------------------------------------------------------------------
 
-send :: Engine -> Packet a -> IO a
+send :: Engine -> RemoteMonad a -> IO a
 send e p = do
   r <- sendE e p
   case r of
@@ -124,8 +140,64 @@ data JavaScriptException = JavaScriptException Value
 
 instance Exception JavaScriptException
 
-sendE :: Engine -> Packet a -> IO (Either Value a)
-sendE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
+sendE :: Engine -> RemoteMonad a -> IO (Either Value a)
+sendE e (RemoteMonad m) = go m
+  where
+    go m = do
+      w <- walkStmtM e m
+      case w of
+        ResultPacket af _ -> sendStmtA e af
+        IntermPacket af k -> do
+          r <- sendStmtA e af
+          case r of
+            Right a -> go (k a)
+            Left msg -> return $ Left msg
+
+data PingPong a where
+  ResultPacket :: AF Stmt a -> Maybe a -> PingPong a
+  IntermPacket :: AF Stmt a -> (a -> M Primitive b) -> PingPong b
+
+walkStmtM :: Engine -> M Primitive a -> IO (PingPong a)
+walkStmtM _          (PureM a) = pure $ ResultPacket (pure a) (pure a)
+walkStmtM Engine{..} (PrimM p) = do
+  s <- prepareStmt genNonce p
+  let af = PrimAF s
+  return $ ResultPacket af (evalStmtA af [])
+walkStmtM e          (ApM g h) = do
+  w1 <- walkStmtM e g
+  case w1 of
+    ResultPacket g_af g_r -> do
+      w2 <- walkStmtM e h
+      case w2 of
+        ResultPacket h_af h_r -> return $ ResultPacket (g_af <*> h_af) (liftA2 ($) g_r h_r)
+        IntermPacket h_af k -> return $
+          IntermPacket (liftA2 (,) g_af h_af)
+                       (\ (r1,r2) -> pure r1 <*> k r2)
+    IntermPacket g_af k -> return $ IntermPacket g_af (\ r -> k r <*> h)
+walkStmtM e          (BindM m k) = do
+  w1 <- walkStmtM e m
+  case w1 of
+    ResultPacket m_af (Just a) -> do
+      w2 <- walkStmtM e (k a)
+      case w2 of
+        ResultPacket h_af h_r ->
+          return $ ResultPacket (m_af *> h_af) h_r
+        IntermPacket h_af k -> return $
+          IntermPacket (m_af *> h_af) k
+    ResultPacket m_af Nothing ->
+          return $ IntermPacket m_af k
+    IntermPacket m_af k0 -> return $ IntermPacket m_af (\ r -> k0 r >>= k)
+
+sendA :: Engine -> Packet a -> IO a
+sendA e p = do
+  r <- sendAE e p
+  case r of
+    Right a -> return a
+    Left err -> throwIO $ JavaScriptException err
+
+-- INLINE
+sendAE :: Engine -> Packet a -> IO (Either Value a)
+sendAE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 
 -- statements are internal single JavaScript statements, that can be
 -- transliterated trivially into JavaScript, or interpreted to give
@@ -187,6 +259,7 @@ serializeA :: AF Stmt a -> LT.Text
 serializeA = LT.concat . concatAF (return . showStmt)
 
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
+sendStmtA e (PureAF a) = return (pure a)
 sendStmtA e af
     | null assignments = do
         sendText e $ serializeA af
@@ -280,3 +353,26 @@ evalAF _ (PureAF a) = pure a
 evalAF f (PrimAF p) = f p
 evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
 
+data M :: (* -> *) -> * -> * where
+ PureM :: a -> M m a
+ PrimM :: m a -> M m a
+ ApM :: M m (a -> b) -> M m a -> M m b
+ BindM :: M m a -> (a -> M m b) -> M m b
+
+instance Functor (M m) where
+  fmap f g = pure f <*> g
+  
+instance Applicative (M m) where
+  pure = PureM
+  (<*>) = ApM
+
+instance Monad (M m) where
+  return = PureM
+  (>>=) = BindM
+  (>>) = (*>)
+
+evalM :: Monad f => (forall a . m a -> f a) -> M m a -> f a
+evalM _ (PureM a) = pure a
+evalM f (PrimM p) = f p
+evalM f (ApM g h) = evalM f g <*> evalM f h
+evalM f (BindM m k) = evalM f m >>=  evalM f . k
