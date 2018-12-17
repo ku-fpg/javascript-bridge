@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -69,8 +70,8 @@ main = do
 
 data Test
  = Group String [Test]
- | TestA String (forall f . (RemoteProcedure f, Applicative f) => API f -> IO (Maybe String))
- | TestM String (forall f . (RemoteProcedure f, Monad f)       => API f -> IO (Maybe String))
+ | TestA String (forall f . (Command f, Procedure f, Applicative f) => API f -> IO (Maybe String))
+ | TestM String (forall f . (Command f, Procedure f, Monad f)       => API f -> IO (Maybe String))
 
 data API f = API
  { send :: forall a . f a -> IO a
@@ -223,7 +224,8 @@ doRecv e = do
         wait <- registerDelay $ 1000 * 1000
         atomically $ (pure <$> readTChan es)
                      `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")        
-doTest :: Remote f => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
+
+doTest :: Command f => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
 doTest api@API{..} suff p k = do
   rM <- k api
   case rM of
@@ -237,3 +239,20 @@ runTests e p ts = sequence_ [ runTest e (n:p) t | (t,n) <- ts `zip` [0..]]
 
 example :: Engine -> IO ()
 example e = runTests e [] tests
+
+{-
+-- Some GADT magic to generate typed permutations of monadic actions.
+data X where
+  X :: LocalMonad a -> RemoteMonad a -> (a -> Value) -> X 
+
+data LocalMonad a where
+  Return :: LocalMonad ()                 -- pure
+  Push   :: Int -> LocalMonad ()          -- command
+  Get    :: LocalMonad Int                -- procedure
+  
+xTests =
+  [ X Return (return ()) (\ () -> True)
+  ]
+
+[X] -> Local
+-}

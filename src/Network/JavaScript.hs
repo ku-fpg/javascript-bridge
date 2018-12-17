@@ -6,14 +6,16 @@
 {-# OPTIONS_GHC -w #-}
 module Network.JavaScript
   ( -- * Remote Applicative Packets of JavaScript
-    Remote
+    Command()
+  , Procedure()
   , Packet
   , RemoteMonad
-  , RemoteProcedure
   , command
   , procedure
   , constructor
   , function
+  , deploy
+  , sync
     -- * sending Packets
   , send
   , sendA
@@ -58,7 +60,7 @@ import Network.JavaScript.Services
 
 ------------------------------------------------------------------------------
 
-class Remote f where
+class Command f where
   -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, which may be reported to console.log.
   command :: LT.Text -> f ()
@@ -75,10 +77,10 @@ class Remote f where
   --   it into a JavaScript function. This can be used to 
   --   generate first-class functions, for passing as arguments.
   function :: ToJSON r
-           => (forall g . (Applicative g, Remote g) => RemoteValue -> g r)
+           => (forall g . (Applicative g, Command g) => RemoteValue -> g r)
            -> f RemoteValue
 
-class Remote f => RemoteProcedure f where
+class Procedure f where
   -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, but any exceptions are returned to the 'send'
   --   as Haskell exceptions.
@@ -91,9 +93,19 @@ class Remote f => RemoteProcedure f where
   --  procedures to be invoked, if needed.
   procedure :: LT.Text -> f Value
   
+
+
+
 -- | A sync will always flush the send queue.
-sync :: (Monad f, RemoteProcedure f) => f ()
+sync :: (Monad f, Procedure f) => f ()
 sync = procedure "null" >>= \ Null -> return ()
+
+-- | 'deploy' takes a procedure, and deploys the
+--   result remotely, instead returning a handle
+--   to the result. This has the benifit of turning
+--   the procedure into a command.
+deploy :: Command f => (forall g . Procedure g => g Value) -> f RemoteValue
+deploy (Procedure p) = constructor p
 
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -111,20 +123,23 @@ data Primitive :: * -> * where
            => (RemoteValue -> Packet r)
            -> Primitive RemoteValue
 
-instance Remote Packet where
+instance Procedure Primitive where
+  procedure = Procedure
+
+instance Command Packet where
   command = Packet . PrimAF . Command  
   constructor = Packet . PrimAF . Constructor
   function k = Packet $ PrimAF $ Function k
 
-instance RemoteProcedure Packet where
+instance Procedure Packet where
   procedure = Packet . PrimAF . Procedure
 
-instance Remote RemoteMonad where
+instance Command RemoteMonad where
   command = RemoteMonad . PrimM . Command  
   constructor = RemoteMonad . PrimM . Constructor
   function k = RemoteMonad $ PrimM $ Function k
 
-instance RemoteProcedure RemoteMonad where
+instance Procedure RemoteMonad where
   procedure = RemoteMonad . PrimM . Procedure  
 
 ------------------------------------------------------------------------------
@@ -324,7 +339,7 @@ var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
 var (RemoteArgument n) = "a" <> LT.pack (show n)
 
 -- | 'delete' a remote value.
-delete :: Remote f => RemoteValue -> f ()
+delete :: Command f => RemoteValue -> f ()
 delete rv = command $ "delete " <> var rv
 
 ------------------------------------------------------------------------------
