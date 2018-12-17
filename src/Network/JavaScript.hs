@@ -108,7 +108,7 @@ data Primitive :: * -> * where
   Procedure :: LT.Text -> Primitive Value
   Constructor :: LT.Text -> Primitive RemoteValue
   Function :: ToJSON r
-           => (forall g . (Applicative g, Remote g) => RemoteValue -> g r)
+           => (RemoteValue -> Packet r)
            -> Primitive RemoteValue
 
 instance Remote Packet where
