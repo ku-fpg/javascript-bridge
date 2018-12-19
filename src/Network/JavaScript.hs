@@ -73,17 +73,17 @@ class Command f where
   --   The value returned in not returned to Haskell. Instead, a handle is returned,
   --   that can be used to access the remote value. Examples of remote values include
   --   objects that can not be serialized, or values that are too large to serialize.
-  constructor :: LT.Text -> f RemoteValue  
+  constructor :: LT.Text -> f (RemoteValue a)
 
   -- | a 'function' takes a Haskell function, and converts
   --   it into a JavaScript function. This can be used to 
   --   generate first-class functions, for passing as arguments.
   --   TODO: generalize to Monad.
-  function :: (forall g . (Command g, Applicative g) => RemoteValue -> g RemoteValue)
-           -> f RemoteValue
+  function :: (forall g . (Command g, Applicative g) => RemoteValue a -> g (RemoteValue b))
+           -> f (RemoteValue (a -> IO b))
 
-  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue -> g ())
-               -> f RemoteValue
+  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
+               -> f (RemoteValue (a -> IO ()))
 
 class Procedure f where
   proc :: FromJSON a => LT.Text -> f a
@@ -101,7 +101,11 @@ class Procedure f where
 procedure :: forall a f . (Procedure f, FromJSON a) => LT.Text -> f a
 procedure = proc
   
--- | A 'Remote' is finally-tagless DSL, consisting of
+as :: (FromJSON a, Procedure g) => (forall f . Command f => f (RemoteValue a)) -> g a
+as (Packet (PrimAF (Constructor cmd))) = procedure cmd
+-- is@Int $ command "fooo"
+
+  -- | A 'Remote' is finally-tagless DSL, consisting of
 --   'Command's,  'Procedure's, 
 --type Remote f = (Command f, Procedure f, Applicative f)
 
@@ -121,9 +125,9 @@ data Primitive :: * -> * where
   Command   :: LT.Text -> Primitive ()
   Procedure :: LT.Text -> Primitive Value
   Procedure' :: FromJSON a => LT.Text -> Primitive a
-  Constructor :: LT.Text -> Primitive RemoteValue
-  Function :: (RemoteValue -> Packet RemoteValue)
-           -> Primitive RemoteValue
+  Constructor :: LT.Text -> Primitive (RemoteValue a)
+  Function :: (RemoteValue a -> Packet (RemoteValue b))
+           -> Primitive (RemoteValue (a -> IO b))
 
 instance Command Packet where
   command = Packet . PrimAF . Command  
@@ -222,7 +226,7 @@ data Stmt a where
   CommandStmt   :: LT.Text -> Stmt ()
   ProcedureStmt :: Int -> LT.Text -> Stmt Value
   ProcedureStmt' :: FromJSON a => Int -> LT.Text -> Stmt a
-  ConstructorStmt :: RemoteValue -> LT.Text -> Stmt RemoteValue
+  ConstructorStmt :: RemoteValue a -> LT.Text -> Stmt (RemoteValue a)
 
 --deriving instance Show (Stmt a)
   
@@ -330,12 +334,12 @@ procVar n = "v" <> LT.pack (show n)
 ------------------------------------------------------------------------------
 
 -- A Local handle into a remote value.
-data RemoteValue = RemoteValue Int
-                 | RemoteArgument Int
+data RemoteValue a = RemoteValue Int
+                   | RemoteArgument Int
   deriving (Eq, Ord, Show)
 
 -- Remote values can not be encoded in JSON, but are JavaScript variables.
-instance ToJSON RemoteValue where
+instance ToJSON (RemoteValue a) where
   toJSON = error "toJSON not supported for RemoteValue"
   toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
 
@@ -344,16 +348,16 @@ val :: ToJSON v => v -> LT.Text
 val = decodeUtf8 . encode
 
 -- | generate the text for a RemoteValue
-var :: RemoteValue -> LT.Text
+var :: RemoteValue a -> LT.Text
 var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
 var (RemoteArgument n) = "a" <> LT.pack (show n)
 
 -- | 'delete' a remote value.
-delete :: Command f => RemoteValue -> f ()
+delete :: Command f => RemoteValue a -> f ()
 delete rv = command $ "delete " <> var rv
 
 -- | 'localize' brings a remote value into Haskell.
-localize :: Procedure f => RemoteValue -> f Value
+localize :: Procedure f => RemoteValue a -> f Value
 localize = procedure . val
 
 ------------------------------------------------------------------------------

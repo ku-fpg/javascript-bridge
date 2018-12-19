@@ -130,7 +130,7 @@ tests =
     ]
   , Group "Constructors"
     [ TestA "constructor" $ \ API{..} -> do
-        rv :: RemoteValue <- send $ constructor "'Hello'"
+        rv :: RemoteValue () <- send $ constructor "'Hello'"
         v1 :: Result String <- send $ fromJSON <$> procedure (var rv)
         send $ delete rv        
         v2 :: Value <- send $ procedure (var rv)
@@ -146,7 +146,7 @@ tests =
     ]
   , Group "Functions"
     [ TestA "function $ id" $ \ API{..} -> do
-        rv :: RemoteValue <- send $ function $ \ v -> pure v
+        rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ v -> pure v
         v :: Result Int <- send $ fromJSON <$> procedure (val rv <> "(4)");
         assert v (4 :: Int)
     ]
@@ -165,8 +165,8 @@ tests =
         assert vs (sum [0..100])
     , TestM "remote monad constructor chain" $ \ API{..} -> do
         rv <- send $ constructor "0"
-        rv :: RemoteValue <- 
-          (send $ foldM (\ (r :: RemoteValue) (i :: Int) -> constructor $ val r <> "+" <> val i)
+        rv :: RemoteValue () <- 
+          (send $ foldM (\ (r :: RemoteValue ()) (i :: Int) -> constructor $ val r <> "+" <> val i)
                            rv
                            [0..100])
         v :: Result Int <- fromJSON <$> (send $ procedure $ val rv)
