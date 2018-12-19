@@ -87,14 +87,14 @@ tests =
     ]
   , Group "Procedures"
     [ TestA "procedure 1 + 1" $ \ API{..} -> do
-        v :: Result Int <- fromJSON <$> send (procedure "1+1")
-        assert v (2 :: Int)
+        v :: Int <- send (procedure "1+1")
+        assert (pure v) (2 :: Int)
     , TestA "procedure 'Hello'" $ \ API{..} -> do
-        v :: Result String <- fromJSON <$> send (procedure "'Hello'")
-        assert v ("Hello" :: String)
+        v :: String <- send (procedure "'Hello'")
+        assert (pure v) ("Hello" :: String)
     , TestA "procedure [true,false]" $ \ API{..} -> do
-        v :: Result [Bool] <- fromJSON <$> send (procedure "[true,false]")
-        assert v [True,False]
+        v :: [Bool] <- send (procedure "[true,false]")
+        assert (pure v) [True,False]
     ]
   , Group "Combine Commands / Procedure"
     [ TestA "command [] + push" $ \ API{..} -> do

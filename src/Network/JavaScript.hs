@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# OPTIONS_GHC -w #-}
 module Network.JavaScript
   ( -- * Remote Applicative Packets of JavaScript
@@ -14,8 +15,9 @@ module Network.JavaScript
   , procedure
   , constructor
   , function
-  , deploy
   , sync
+  , localize
+  , continuation
     -- * sending Packets
   , send
   , sendA
@@ -49,7 +51,7 @@ import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson ( Value(..), decode', FromJSON(..),withObject,(.:)
-                  , ToJSON(..), encode)
+                  , ToJSON(..), encode, Result(..), fromJSON)
 import Data.Text.Lazy.Encoding(decodeUtf8,encodeUtf8)
 import qualified Data.Aeson.Encoding.Internal as AI
 import qualified Data.Binary.Builder as B
@@ -76,36 +78,36 @@ class Command f where
   -- | a 'function' takes a Haskell function, and converts
   --   it into a JavaScript function. This can be used to 
   --   generate first-class functions, for passing as arguments.
-  function :: ToJSON r
-           => (forall g . (Applicative g, Command g) => RemoteValue -> g r)
+  --   TODO: generalize to Monad.
+  function :: (forall g . (Command g, Applicative g) => RemoteValue -> g RemoteValue)
            -> f RemoteValue
 
+  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue -> g ())
+               -> f RemoteValue
+
 class Procedure f where
-  -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
-  --   Should never throw an exception, but any exceptions are returned to the 'send'
-  --   as Haskell exceptions.
-  --
-  --   Procedures can return Promises. Before completing the transaction, all the values
-  --   for all the procedures that are promises are fulfilled (using Promises.all).
-  --
-  --  If a procedure throws an exception, future commands and procedures in
-  --  the same packet will not be executed. Use promises to allow all commands and
-  --  procedures to be invoked, if needed.
-  procedure :: LT.Text -> f Value
+  proc :: FromJSON a => LT.Text -> f a
+
+-- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
+--   Should never throw an exception, but any exceptions are returned to the 'send'
+--   as Haskell exceptions.
+--
+--   Procedures can return Promises. Before completing the transaction, all the values
+--   for all the procedures that are promises are fulfilled (using Promises.all).
+--
+--  If a procedure throws an exception, future commands and procedures in
+--  the same packet will not be executed. Use promises to allow all commands and
+--  procedures to be invoked, if needed.
+procedure :: forall a f . (Procedure f, FromJSON a) => LT.Text -> f a
+procedure = proc
   
-
-
+-- | A 'Remote' is finally-tagless DSL, consisting of
+--   'Command's,  'Procedure's, 
+--type Remote f = (Command f, Procedure f, Applicative f)
 
 -- | A sync will always flush the send queue.
 sync :: (Monad f, Procedure f) => f ()
 sync = procedure "null" >>= \ Null -> return ()
-
--- | 'deploy' takes a procedure, and deploys the
---   result remotely, instead returning a handle
---   to the result. This has the benifit of turning
---   the procedure into a command.
-deploy :: Command f => (forall g . Procedure g => g Value) -> f RemoteValue
-deploy (Procedure p) = constructor p
 
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -118,13 +120,10 @@ newtype RemoteMonad a = RemoteMonad (M Primitive a)
 data Primitive :: * -> * where
   Command   :: LT.Text -> Primitive ()
   Procedure :: LT.Text -> Primitive Value
+  Procedure' :: FromJSON a => LT.Text -> Primitive a
   Constructor :: LT.Text -> Primitive RemoteValue
-  Function :: ToJSON r
-           => (RemoteValue -> Packet r)
+  Function :: (RemoteValue -> Packet RemoteValue)
            -> Primitive RemoteValue
-
-instance Procedure Primitive where
-  procedure = Procedure
 
 instance Command Packet where
   command = Packet . PrimAF . Command  
@@ -132,7 +131,7 @@ instance Command Packet where
   function k = Packet $ PrimAF $ Function k
 
 instance Procedure Packet where
-  procedure = Packet . PrimAF . Procedure
+  proc = Packet . PrimAF . Procedure'
 
 instance Command RemoteMonad where
   command = RemoteMonad . PrimM . Command  
@@ -140,7 +139,7 @@ instance Command RemoteMonad where
   function k = RemoteMonad $ PrimM $ Function k
 
 instance Procedure RemoteMonad where
-  procedure = RemoteMonad . PrimM . Procedure  
+  proc = RemoteMonad . PrimM . Procedure'
 
 ------------------------------------------------------------------------------
 
@@ -222,9 +221,10 @@ sendAE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 data Stmt a where
   CommandStmt   :: LT.Text -> Stmt ()
   ProcedureStmt :: Int -> LT.Text -> Stmt Value
+  ProcedureStmt' :: FromJSON a => Int -> LT.Text -> Stmt a
   ConstructorStmt :: RemoteValue -> LT.Text -> Stmt RemoteValue
 
-deriving instance Show (Stmt a)
+--deriving instance Show (Stmt a)
   
 prepareStmtA :: Monad f => f Int -> AF Primitive a -> f (AF Stmt a)
 prepareStmtA _  (PureAF a) = pure (pure a)
@@ -234,6 +234,7 @@ prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
 prepareStmt :: Monad f => f Int -> Primitive a -> f (Stmt a)
 prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
 prepareStmt ug (Procedure stmt)   = ug >>= \ i -> pure $ ProcedureStmt i stmt
+prepareStmt ug (Procedure' stmt)  = ug >>= \ i -> pure $ ProcedureStmt' i stmt
 prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
 prepareStmt ug (Function k) = do
   i <- ug
@@ -257,6 +258,7 @@ showStmtA = LT.concat . concatAF (return . showStmt)
 showStmt :: Stmt a -> LT.Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
+showStmt (ProcedureStmt' n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
 showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
 
 evalStmtA :: AF Stmt a -> [Value] -> Maybe a
@@ -268,6 +270,13 @@ evalStmt (ProcedureStmt _ _)   = do
   vs <- get
   case vs of
     (v:vs') -> put vs' >> return v
+    _ -> fail "not enough values"
+evalStmt (ProcedureStmt' _ _)   = do
+  vs <- get
+  case vs of
+    (v:vs') -> put vs' >> case fromJSON v of
+      Error _ -> fail "can not parse result"
+      Success r -> return r
     _ -> fail "not enough values"
 evalStmt (ConstructorStmt c _) = pure c
 
@@ -303,6 +312,7 @@ sendStmtA e af
 
     findAssign :: Stmt a -> Maybe Int
     findAssign (ProcedureStmt i _) = Just i
+    findAssign (ProcedureStmt' i _) = Just i    
     findAssign _ = Nothing
     
     -- generate the call to reply (as a final command)
@@ -341,6 +351,10 @@ var (RemoteArgument n) = "a" <> LT.pack (show n)
 -- | 'delete' a remote value.
 delete :: Command f => RemoteValue -> f ()
 delete rv = command $ "delete " <> var rv
+
+-- | 'localize' brings a remote value into Haskell.
+localize :: Procedure f => RemoteValue -> f Value
+localize = procedure . val
 
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad
