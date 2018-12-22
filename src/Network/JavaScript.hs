@@ -79,7 +79,7 @@ class Command f where
   --   it into a JavaScript function. This can be used to 
   --   generate first-class functions, for passing as arguments.
   --   TODO: generalize to Monad.
-  function :: (forall g . (Command g, Applicative g) => RemoteValue a -> g (RemoteValue b))
+  function :: (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
            -> f (RemoteValue (a -> IO b))
 
   continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
@@ -126,7 +126,7 @@ data Primitive :: * -> * where
   Procedure :: LT.Text -> Primitive Value
   Procedure' :: FromJSON a => LT.Text -> Primitive a
   Constructor :: LT.Text -> Primitive (RemoteValue a)
-  Function :: (RemoteValue a -> Packet (RemoteValue b))
+  Function :: (RemoteValue (a -> IO b) -> RemoteValue a -> Packet (RemoteValue b))
            -> Primitive (RemoteValue (a -> IO b))
 
 instance Command Packet where
@@ -242,13 +242,13 @@ prepareStmt ug (Procedure' stmt)  = ug >>= \ i -> pure $ ProcedureStmt' i stmt
 prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
 prepareStmt ug (Function k) = do
   i <- ug
+  j <- ug
   let a0 = RemoteArgument i
-  let Packet f = k a0
+  let Packet f = k (RemoteValue j) a0
   ss <- prepareStmtA ug $ f 
   case evalStmtA ss [] of
     Nothing -> error "procedure inside function (should never happen)"
     Just a -> do
-      j <- ug
       -- Technically, we can handle a single procedure,
       -- as the final primitive, but using return (..the prim..).
       let funWrapper xs = "function(" <> val a0 <> "){" <> xs <> "return " <> val a <> ";}"

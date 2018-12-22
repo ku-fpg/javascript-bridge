@@ -148,7 +148,7 @@ tests =
     ]
   , Tests "Functions"
     [ TestA "function $ id" $ \ API{..} -> do
-        rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ v -> pure v
+        rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ _ v -> pure v
         v :: Int <- send $ procedure (val rv <> "(4)");
         assert v (4 :: Int)
     ]
