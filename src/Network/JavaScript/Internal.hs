@@ -4,54 +4,47 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# OPTIONS_GHC -v #-}
+{-# OPTIONS_GHC -w #-}
 module Network.JavaScript.Internal
-  ( -- * Remote Applicative Packets of JavaScript
-    Command(..)
-  , Procedure(..)
-  , Packet(..)
-  , RemoteMonad(..)
-  , Primitive(..)
+  ( -- * Commands
+    Command()
+  , internalCommand
+  , internalConstructor
+  , internalFunction
+    -- * Procedures
+  , Procedure()
+  , internalProcedure
+    -- * Primitives and (Remote) Values
   , RemoteValue(..)
+  , Primitive(..)
+    -- * (Applicative) Packets
+  , Packet(..)
   , AF(..)
-  , M(..)
+  , RemoteMonad(..)
   , evalAF
   , concatAF
+    -- * Monads
+  , M(..)
   , evalM
   ) where
 
 import           Data.Text.Lazy(Text)
 
-import Data.Aeson (Value(..), FromJSON(..))
+import Data.Aeson (FromJSON(..))
 
 ------------------------------------------------------------------------------
 
 class Command f where
-  -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
-  --   Should never throw an exception, which may be reported to console.log.
-  command :: Text -> f ()
-  -- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
-  --   Should never throw an exception, but any exceptions are returned to the 'send'
-  --   as Haskell exceptions.
-  --
-  --   The value returned in not returned to Haskell. Instead, a handle is returned,
-  --   that can be used to access the remote value. Examples of remote values include
-  --   objects that can not be serialized, or values that are too large to serialize.
-  constructor :: Text -> f (RemoteValue a)
-
-  -- | a 'function' takes a Haskell function, and converts
-  --   it into a JavaScript function. This can be used to 
-  --   generate first-class functions, for passing as arguments.
-  --   TODO: generalize to Monad.
-  function :: (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
+  internalCommand :: Text -> f ()
+  internalConstructor :: Text -> f (RemoteValue a)
+  internalFunction :: (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
 
            -> f (RemoteValue (a -> IO b))
-
---  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
+--  aContinuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
 --               -> f (RemoteValue (a -> IO ()))
 
 class Procedure f where
-  proc :: FromJSON a => Text -> f a
+  internalProcedure :: FromJSON a => Text -> f a
   
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -63,27 +56,26 @@ newtype RemoteMonad a = RemoteMonad (M Primitive a)
 
 data Primitive :: * -> * where
   Command   :: Text -> Primitive ()
-  Procedure :: Text -> Primitive Value
-  Procedure' :: FromJSON a => Text -> Primitive a
+  Procedure :: FromJSON a => Text -> Primitive a
   Constructor :: Text -> Primitive (RemoteValue a)
   Function :: (RemoteValue (a -> IO b) -> RemoteValue a -> Packet (RemoteValue b))
            -> Primitive (RemoteValue (a -> IO b))
 
 instance Command Packet where
-  command = Packet . PrimAF . Command  
-  constructor = Packet . PrimAF . Constructor
-  function k = Packet $ PrimAF $ Function k
+  internalCommand = Packet . PrimAF . Command  
+  internalConstructor = Packet . PrimAF . Constructor
+  internalFunction k = Packet $ PrimAF $ Function k
 
 instance Procedure Packet where
-  proc = Packet . PrimAF . Procedure'
+  internalProcedure = Packet . PrimAF . Procedure
 
 instance Command RemoteMonad where
-  command = RemoteMonad . PrimM . Command  
-  constructor = RemoteMonad . PrimM . Constructor
-  function k = RemoteMonad $ PrimM $ Function k
+  internalCommand = RemoteMonad . PrimM . Command  
+  internalConstructor = RemoteMonad . PrimM . Constructor
+  internalFunction k = RemoteMonad $ PrimM $ Function k
 
 instance Procedure RemoteMonad where
-  proc = RemoteMonad . PrimM . Procedure'
+  internalProcedure = RemoteMonad . PrimM . Procedure
 
 -- A Local handle into a remote value.
 data RemoteValue a = RemoteValue Int

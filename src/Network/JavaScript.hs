@@ -41,6 +41,7 @@ import Control.Exception(Exception)
 import Control.Exception as Exception
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
+import Data.Text.Lazy (Text)
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
 import qualified Network.WebSockets as WS
@@ -62,7 +63,35 @@ import Network.JavaScript.Services
 import Network.JavaScript.Internal
 
 ------------------------------------------------------------------------------
+
+-- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
+--   Should never throw an exception, which may be reported to console.log.
+command :: Command f => Text -> f ()
+command = internalCommand
   
+-- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
+--   Should never throw an exception, but any exceptions are returned to the 'send'
+--   as Haskell exceptions.
+--
+--   The value returned in not returned to Haskell. Instead, a handle is returned,
+--   that can be used to access the remote value. Examples of remote values include
+--   objects that can not be serialized, or values that are too large to serialize.
+--
+--   The first type argument is the phantom type of the 'RemoteValue', so that
+--   type application can be used to specify the type.
+constructor :: forall a f . Command f => Text -> f (RemoteValue a)
+constructor = internalConstructor
+
+-- | a 'function' takes a Haskell function, and converts
+--   it into a JavaScript function. This can be used to 
+--   generate first-class functions, for passing as arguments.
+--
+--   TODO: generalize to Monad.
+function :: forall a b f . Command f => (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
+
+           -> f (RemoteValue (a -> IO b))
+function = internalFunction
+
 -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
 --   Should never throw an exception, but any exceptions are returned to the 'send'
 --   as Haskell exceptions.
@@ -73,16 +102,12 @@ import Network.JavaScript.Internal
 --  If a procedure throws an exception, future commands and procedures in
 --  the same packet will not be executed. Use promises to allow all commands and
 --  procedures to be invoked, if needed.
-procedure :: forall a f . (Procedure f, FromJSON a) => LT.Text -> f a
-procedure = proc
+procedure :: forall a f . (Procedure f, FromJSON a) => Text -> f a
+procedure = internalProcedure
 
 as :: (FromJSON a, Procedure g) => (forall f . Command f => f (RemoteValue a)) -> g a
 as (Packet (PrimAF (Constructor cmd))) = procedure cmd
 -- is@Int $ command "fooo"
-
-  -- | A 'Remote' is finally-tagless DSL, consisting of
---   'Command's,  'Procedure's, 
---type Remote f = (Command f, Procedure f, Applicative f)
 
 -- | A sync will always flush the send queue.
 sync :: (Monad f, Procedure f) => f ()
@@ -166,10 +191,9 @@ sendAE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 -- a remote effect, including result.
 
 data Stmt a where
-  CommandStmt   :: LT.Text -> Stmt ()
-  ProcedureStmt :: Int -> LT.Text -> Stmt Value
-  ProcedureStmt' :: FromJSON a => Int -> LT.Text -> Stmt a
-  ConstructorStmt :: RemoteValue a -> LT.Text -> Stmt (RemoteValue a)
+  CommandStmt   :: Text -> Stmt ()
+  ProcedureStmt :: FromJSON a => Int -> Text -> Stmt a
+  ConstructorStmt :: RemoteValue a -> Text -> Stmt (RemoteValue a)
 
 --deriving instance Show (Stmt a)
   
@@ -181,7 +205,6 @@ prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
 prepareStmt :: Monad f => f Int -> Primitive a -> f (Stmt a)
 prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
 prepareStmt ug (Procedure stmt)   = ug >>= \ i -> pure $ ProcedureStmt i stmt
-prepareStmt ug (Procedure' stmt)  = ug >>= \ i -> pure $ ProcedureStmt' i stmt
 prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
 prepareStmt ug (Function k) = do
   i <- ug
@@ -199,13 +222,12 @@ prepareStmt ug (Function k) = do
              $ funWrapper
              $ serializeA ss
    
-showStmtA :: AF Stmt a -> LT.Text
+showStmtA :: AF Stmt a -> Text
 showStmtA = LT.concat . concatAF (return . showStmt)
 
-showStmt :: Stmt a -> LT.Text
+showStmt :: Stmt a -> Text
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
-showStmt (ProcedureStmt' n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
 showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
 
 evalStmtA :: AF Stmt a -> [Value] -> Maybe a
@@ -216,18 +238,13 @@ evalStmt (CommandStmt _)       = pure ()
 evalStmt (ProcedureStmt _ _)   = do
   vs <- get
   case vs of
-    (v:vs') -> put vs' >> return v
-    _ -> fail "not enough values"
-evalStmt (ProcedureStmt' _ _)   = do
-  vs <- get
-  case vs of
     (v:vs') -> put vs' >> case fromJSON v of
       Error _ -> fail "can not parse result"
       Success r -> return r
     _ -> fail "not enough values"
 evalStmt (ConstructorStmt c _) = pure c
 
-serializeA :: AF Stmt a -> LT.Text
+serializeA :: AF Stmt a -> Text
 serializeA = LT.concat . concatAF (return . showStmt)
 
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
@@ -249,7 +266,7 @@ sendStmtA e af
           Left err -> return $ Left err
         
   where
-    catchMe :: Int -> LT.Text -> LT.Text
+    catchMe :: Int -> Text -> Text
     catchMe nonce txt =
       "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <>
       reply nonce <> ";"
@@ -259,11 +276,10 @@ sendStmtA e af
 
     findAssign :: Stmt a -> Maybe Int
     findAssign (ProcedureStmt i _) = Just i
-    findAssign (ProcedureStmt' i _) = Just i    
     findAssign _ = Nothing
     
     -- generate the call to reply (as a final command)
-    reply :: Int -> LT.Text
+    reply :: Int -> Text
     reply n =
       "reply(" <> LT.intercalate ","
       [ LT.pack (show n)
@@ -271,7 +287,7 @@ sendStmtA e af
       ] <> ")"
 
 -- TODO: Consider a wrapper around this Int
-procVar :: Int -> LT.Text
+procVar :: Int -> Text
 procVar n = "v" <> LT.pack (show n)
 
 ------------------------------------------------------------------------------
@@ -282,11 +298,11 @@ instance ToJSON (RemoteValue a) where
   toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
 
 -- | generate the text for a JavaScript value, including RemoteValues.
-val :: ToJSON v => v -> LT.Text
+val :: ToJSON v => v -> Text
 val = decodeUtf8 . encode
 
 -- | generate the text for a RemoteValue
-var :: RemoteValue a -> LT.Text
+var :: RemoteValue a -> Text
 var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
 var (RemoteArgument n) = "a" <> LT.pack (show n)
 
