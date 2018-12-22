@@ -14,6 +14,7 @@ import Network.JavaScript as JS
 import Network.Wai.Middleware.RequestLogger
 import System.Exit
 import Web.Scotty hiding (delete, function)
+import Data.Time.Clock
 
 main = main_ 3000
 
@@ -265,19 +266,22 @@ doRecv e = do
 
 doTest :: (Applicative f, Command f) => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
 doTest api@API{..} suff p k = do
+  tm0 <- getCurrentTime
   rM <- k api
+  tm1 <- getCurrentTime
+  let tm = show (diffUTCTime tm1 tm0)
   case rM of
     Nothing -> do
       send $
        (command $ var progressBar <> ".style.width='100%'") *>
        (command $ var progressBar <> ".classList.add('bg-success')") *>
-       (command $ var progressBar <> ".innerHTML=''")       
+       (command $ var progressBar <> ".innerHTML=" <> value tm)       
     Just msg -> do
       print ("doTest failed"::String,msg)
       send $
        (command $ var progressBar <> ".style.width='100%'") *>
        (command $ var progressBar <> ".classList.add('bg-danger')") *>
-       (command $ var progressBar <> ".innerHTML=''")
+       (command $ var progressBar <> ".innerHTML=" <> value tm)       
        
 runTests :: Engine -> [Int] -> [Tests] -> IO ()
 runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
