@@ -120,6 +120,10 @@ bootstrap =   LT.unlines
 addListener :: Engine -> (Value -> IO ()) -> IO ()
 addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
 
+-- | Set a listener for events. Previous listeners are discarded.
+--
+--   From javascript, you can call event(..) to send
+--   values to this listener. Any valid JSON value can be sent.
 setListener :: Engine -> (Value -> IO ()) -> IO ()
 setListener engine k = atomically $ modifyTVar (listener engine) $ const k
 
