@@ -75,7 +75,10 @@ data Tests = Tests String [Test]
 data API f = API
  { send :: forall a . f a -> IO a
  , recv :: IO (Result Value)
+ , progressBar :: RemoteValue DOM
  }
+
+data DOM
 
 ------------------------------------------------------------------------------
 
@@ -87,106 +90,105 @@ tests =
   , Tests "Procedures"
     [ TestA "procedure 1 + 1" $ \ API{..} -> do
         v :: Int <- send (procedure "1+1")
-        assert (pure v) (2 :: Int)
+        assert v (2 :: Int)
     , TestA "procedure 'Hello'" $ \ API{..} -> do
         v :: String <- send (procedure "'Hello'")
-        assert (pure v) ("Hello" :: String)
+        assert v ("Hello" :: String)
     , TestA "procedure [true,false]" $ \ API{..} -> do
         v :: [Bool] <- send (procedure "[true,false]")
-        assert (pure v) [True,False]
+        assert v [True,False]
     ]
   , Tests "Combine Commands / Procedure"
     [ TestA "command [] + push" $ \ API{..} -> do
         send (command "local = []" *> command "local.push(99)")        
-        v :: Result [Int] <- fromJSON <$> send (procedure "local")
+        v :: [Int] <- send (procedure "local")
         assert v [99]
     , TestA "command [] + push + procedure" $ \ API{..} -> do
-        v :: Result [Int] <- fromJSON <$> send (command "local = []" *> command "local.push(99)" *> procedure "local")
+        v :: [Int] <- send (command "local = []" *> command "local.push(99)" *> procedure "local")
         assert v [99]
     , TestA "procedure + procedure" $ \ API{..} -> do
-        v :: Result (Int,Bool) <- send (liftA2 (,)
-                                            <$> (fromJSON <$> procedure "99")
-                                            <*> (fromJSON <$> procedure "false"))
+        v :: (Int,Bool) <- send (liftA2 (,)
+                                            (procedure "99")
+                                            (procedure "false"))
         assert v (99,False)
     ]    
   , Tests "Promises"
     [ TestA "promises" $ \ API{..} -> do
-        v :: Result (String,String) <- send $ liftA2 (,)
-             <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
-             <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('World') })")
+        v :: (String,String) <- send $ liftA2 (,)
+                 (procedure "new Promise(function(good,bad) { good('Hello') })")
+                 (procedure "new Promise(function(good,bad) { good('World') })")
         assert v ("Hello","World")
     , TestA "promise + procedure" $ \ API{..} -> do
-        v :: Result (String,String) <- send $ liftA2 (,)
-             <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
-             <*> (fromJSON <$> procedure "'World'")
+        v :: (String,String) <- send $ liftA2 (,)
+                 (procedure "new Promise(function(good,bad) { good('Hello') })")
+                 (procedure "'World'")
         assert v ("Hello","World")
     , TestA "good and bad promises" $ \ API{..} -> do
-        v :: Either JavaScriptException (Result (String,String,String)) <- E.try $ send $ liftA3 (,,)
-             <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
-             <*> (fromJSON <$> procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
-             <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('News') })")
-        assert (pure v) (Left $ JavaScriptException $ String "Promise Reject")        
+        v :: Either JavaScriptException ((String,String,String)) <- E.try $ send $ liftA3 (,,)
+                 (procedure "new Promise(function(good,bad) { good('Hello') })")
+                 (procedure "new Promise(function(good,bad) { bad('Promise Reject') })")
+                 (procedure "new Promise(function(good,bad) { good('News') })")
+        assert v (Left $ JavaScriptException $ String "Promise Reject")        
     ]
   , Tests "Constructors"
     [ TestA "constructor" $ \ API{..} -> do
         rv :: RemoteValue () <- send $ constructor "'Hello'"
-        v1 :: Result String <- send $ fromJSON <$> procedure (var rv)
+        v1 :: String <- send $ procedure (var rv)
         send $ delete rv        
         v2 :: Value <- send $ procedure (var rv)
-        assert ((,) <$> v1 <*> pure v2) ("Hello",Null)
+        assert (v1,v2) ("Hello",Null)
     ]
   , Tests "Exceptions"
     [ TestA "command throw" $ \ API{..} -> do
         send $ command $ "throw 'Command Fail';"
-        assert (pure ()) ()
+        assert () ()
     , TestA "procedure throw" $ \ API{..} -> do
         v :: Either JavaScriptException Value <- E.try $ send $ procedure $ "(function(){throw 'Command Fail';})()"
-        assert (pure v) (Left $ JavaScriptException $ String "Command Fail")
+        assert v (Left $ JavaScriptException $ String "Command Fail")
     ]
   , Tests "Functions"
     [ TestA "function $ id" $ \ API{..} -> do
         rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ v -> pure v
-        v :: Result Int <- send $ fromJSON <$> procedure (val rv <> "(4)");
+        v :: Int <- send $ procedure (val rv <> "(4)");
         assert v (4 :: Int)
     ]
   , Tests "Events"
     [ TestA "event" $ \ API{..} -> do
         send $ command ("event('Hello, World')");        
-        event <- recv 
-        assert event (String "Hello, World" :: Value)
+        event <- recv
+        assert event (Success $ toJSON ("Hello, World" :: String))
     ]
   , Tests "Remote Monad"
     [ TestM "remote monad procedure chain" $ \ API{..} -> do
-        vs :: Result Int <- fromJSON <$>
+        vs :: Value <- 
           (send $ foldM (\ (r :: Value) (i :: Int) -> procedure $ val r <> "+" <> val i)
                            (toJSON (0 :: Int))
                            [0..100])
-        assert vs (sum [0..100])
+        assert vs (toJSON $ sum [0..100::Int])
     , TestM "remote monad constructor chain" $ \ API{..} -> do
         rv <- send $ constructor "0"
         rv :: RemoteValue () <- 
           (send $ foldM (\ (r :: RemoteValue ()) (i :: Int) -> constructor $ val r <> "+" <> val i)
                            rv
                            [0..100])
-        v :: Result Int <- fromJSON <$> (send $ procedure $ val rv)
+        v :: Int <- (send $ procedure $ val rv)
         assert v (sum [0..100])
     ]
   , Tests "Alive Connection"
     [ TestM "before wait" $ \ API{..} -> do
-        assert (pure ()) ()
+        assert () ()
     , TestM "after wait for 80" $ \ API{..} -> do
         send $ command ("event('Hello, World')");        
         let w = 80
         _ <- threadDelay $ w * 1000 * 1000
-        assert (pure ()) ()
+        assert () ()
     ]
   ]
 
 ------------------------------------------------------------------------------
 
-assert :: (Eq a, Show a) => Result a -> a -> IO (Maybe String)
-assert (Error er)  _ = return $ Just $ show er
-assert (Success n) g
+assert :: (Eq a, Show a) => a -> a -> IO (Maybe String)
+assert n g
   | n == g    = return $ Nothing
   | otherwise = return $ Just $ show ("assert failure",n,g)
 
@@ -227,11 +229,14 @@ tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 runTest :: Engine -> [Int] -> Test -> IO ()
 runTest e p (TestA txt k) = do
   recv <- doRecv e
-  doTest (API (JS.send e) recv)  "-m" p k
-  doTest (API (JS.sendA e) recv) "-a" p k
+  mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
+  aBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-a") <> "')"
+  doTest (API (JS.send e) recv mBar)  "-m" p k
+  doTest (API (JS.sendA e) recv aBar) "-a" p k
 runTest e p (TestM txt k) = do
   recv <- doRecv e
-  doTest (API (JS.send e) recv)  "-m" p k
+  mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
+  doTest (API (JS.send e) recv mBar)  "-m" p k
 
 doRecv :: Engine -> IO (IO (Result Value))
 doRecv e = do
@@ -244,7 +249,6 @@ doRecv e = do
 
 doTest :: (Applicative f, Command f) => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
 doTest api@API{..} suff p k = do
-  print ("do Test" :: String)
   rM <- k api
   case rM of
     Nothing -> do
