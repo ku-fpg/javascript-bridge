@@ -266,20 +266,3 @@ runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [
 
 example :: Engine -> IO ()
 example e = runTests e [] tests
-
-{-
--- Some GADT magic to generate typed permutations of monadic actions.
-data X where
-  X :: LocalMonad a -> RemoteMonad a -> (a -> Value) -> X 
-
-data LocalMonad a where
-  Return :: LocalMonad ()                 -- pure
-  Push   :: Int -> LocalMonad ()          -- command
-  Get    :: LocalMonad Int                -- procedure
-  
-xTests =
-  [ X Return (return ()) (\ () -> True)
-  ]
-
-[X] -> Local
--}
