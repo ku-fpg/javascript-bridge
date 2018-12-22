@@ -253,13 +253,13 @@ doTest api@API{..} suff p k = do
   case rM of
     Nothing -> do
       send $
-       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').style.width='100%'") *>
-       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('bg-success')")
+       (command $ val progressBar <> ".style.width='100%'") *>
+       (command $ val progressBar <> ".classList.add('bg-success')")
     Just msg -> do
       print ("doTest failed"::String,msg)
       send $
-       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').style.width='100%'") *>
-       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('bg-danger')")
+       (command $ val progressBar <> ".style.width='100%'") *>
+       (command $ val progressBar <> ".classList.add('bg-danger')")
 
 runTests :: Engine -> [Int] -> [Tests] -> IO ()
 runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
