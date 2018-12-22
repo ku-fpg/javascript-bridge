@@ -93,7 +93,6 @@ data Engine = Engine
 bootstrap :: LT.Text
 bootstrap =   LT.unlines
    [     "jsb.onmessage = function(evt){ "
-   ,     "   var debug = false;"
    ,     "   var error = function(n,err) {"
    ,     "         jsb.send(JSON.stringify({id: n, error: err}));"
    ,     "         throw(err);"
@@ -103,13 +102,13 @@ bootstrap =   LT.unlines
    ,     "   };"
    ,     "   var reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
-   ,     "         if (debug) { console.log('reply',{id:n, result:obj}); }"   
+   ,     "         if (jsb.debug) { console.log('reply',{id:n, result:obj}); }"   
    ,     "         jsb.send(JSON.stringify({id: n, result: obj}));"
    ,     "       }).catch(function(err){"
    ,     "         error(n,err);"
    ,     "       });"
    ,     "   };"
-   ,     "   if (debug) { console.log('eval',evt.data); }"
+   ,     "   if (jsb.debug) { console.log('eval',evt.data); }"
    ,     "   eval('(function(){' + evt.data + '})()');"
    ,     "};"
    ]
