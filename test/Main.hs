@@ -11,14 +11,19 @@ import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
 import Network.JavaScript as JS
+import Network.Wai.Middleware.RequestLogger
 import System.Exit
 import Web.Scotty hiding (delete, function)
 
-main :: IO ()
-main = do
+main = main_ 3000
+
+main_ :: Int -> IO ()
+main_ i = do
         lock <- newEmptyMVar
 
-        _ <- forkIO $ scotty 3000 $ do
+        _ <- forkIO $ scotty i $ do
+--          middleware $ logStdout
+          
           middleware $ start $ \ e -> example e `E.finally`
                        (do putMVar lock ()
                            putStrLn "Finished example")
@@ -26,37 +31,29 @@ main = do
 
           get "/" $ do
             html $ mconcat $
-               [ "<head>"
-                 -- From https://www.w3.org/Style/Examples/007/leaders.en.html
-               , "<style type=\"text/css\">"
-               , "ul.leaders {"
-               , "max-width: 40em;"
-               , "padding: 0;"
-               , "overflow-x: hidden;"
-               , "list-style: none}"
-               , "ul.leaders li:before {"
-               , "float: left;"
-               , "width: 0;"
-               , "white-space: nowrap;"
-               , "content:"
-               , "\". . . . . . . . . . . . . . . . . . . . \""
-               , "\". . . . . . . . . . . . . . . . . . . . \""
-               , "\". . . . . . . . . . . . . . . . . . . . \""
-               , "\". . . . . . . . . . . . . . . . . . . . \"}"
-               , "ul.leaders span:first-child {"
-               , "padding-right: 0.33em;"
-               , "background: white}"
-               , "ul.leaders span + span {"
-               , "float: right;"
-               , "padding-left: 0.33em;"
-               , "background: white}"
-               , "span.pass{color: green;}"
-               , "span.fail{color: red;}"
-               , "</style>"
+               [
+                 "<!doctype html>"
+               , "<html lang=\"en\">"
+               , "<head>"
+               , "<!-- Required meta tags -->"
+               , "<meta charset=\"utf-8\">"
+               , "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">"
+               , "<!-- Bootstrap CSS -->"
+               , "<link rel=\"stylesheet\" href=\"https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css\" integrity=\"sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO\" crossorigin=\"anonymous\">"
+
+               , "<title>JavaScript Bridge Tests</title>"
                , "</head>"
                , "<body>"
-               ,   "<h1>JavaScript Bridge Tests</h1>"
-               , T.pack (table tests) 
+               , " <div class=\"container\">"
+               ,   "<h3>JavaScript Bridge Tests</h3>"
+               , "  <div class=\"row\">"
+               , "    <div class=\"col-3\"><p class=\"font-weight-bold\">Groups</p></div>"
+               , "    <div class=\"col-5\"><p class=\"font-weight-bold\">Tests</p></div>"
+               , "    <div class=\"col-2\"><p class=\"text-center font-weight-bold\">Applicative</p></div>"
+               , "    <div class=\"col-2\"><p class=\"text-center font-weight-bold\">Monad</p></div>"
+               , "  </div>"
+               , T.pack (table tests)
+               , "</div>"
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://' + location.host + '/');"
                ,     "jsb.onmessage = (evt) => eval(evt.data);"
@@ -64,14 +61,16 @@ main = do
                ,     "var remote = [];"
                ,   "</script>"
                , "</body>"
+               , "</html>"
                ]
 
         takeMVar lock
 
 data Test
- = Group String [Test]
- | TestA String (forall f . (Command f, Procedure f, Applicative f) => API f -> IO (Maybe String))
+ = TestA String (forall f . (Command f, Procedure f, Applicative f) => API f -> IO (Maybe String))
  | TestM String (forall f . (Command f, Procedure f, Monad f)       => API f -> IO (Maybe String))
+
+data Tests = Tests String [Test]
 
 data API f = API
  { send :: forall a . f a -> IO a
@@ -80,12 +79,12 @@ data API f = API
 
 ------------------------------------------------------------------------------
 
-tests :: [Test]
+tests :: [Tests]
 tests =
-  [ Group "Commands"
+  [ Tests "Commands"
     [ TestA "command" $ \ API{..} -> send (command "1") >> pure Nothing
     ]
-  , Group "Procedures"
+  , Tests "Procedures"
     [ TestA "procedure 1 + 1" $ \ API{..} -> do
         v :: Int <- send (procedure "1+1")
         assert (pure v) (2 :: Int)
@@ -96,7 +95,7 @@ tests =
         v :: [Bool] <- send (procedure "[true,false]")
         assert (pure v) [True,False]
     ]
-  , Group "Combine Commands / Procedure"
+  , Tests "Combine Commands / Procedure"
     [ TestA "command [] + push" $ \ API{..} -> do
         send (command "local = []" *> command "local.push(99)")        
         v :: Result [Int] <- fromJSON <$> send (procedure "local")
@@ -110,7 +109,7 @@ tests =
                                             <*> (fromJSON <$> procedure "false"))
         assert v (99,False)
     ]    
-  , Group "Promises"
+  , Tests "Promises"
     [ TestA "promises" $ \ API{..} -> do
         v :: Result (String,String) <- send $ liftA2 (,)
              <$> (fromJSON <$> procedure "new Promise(function(good,bad) { good('Hello') })")
@@ -128,7 +127,7 @@ tests =
              <*> (fromJSON <$> procedure "new Promise(function(good,bad) { good('News') })")
         assert (pure v) (Left $ JavaScriptException $ String "Promise Reject")        
     ]
-  , Group "Constructors"
+  , Tests "Constructors"
     [ TestA "constructor" $ \ API{..} -> do
         rv :: RemoteValue () <- send $ constructor "'Hello'"
         v1 :: Result String <- send $ fromJSON <$> procedure (var rv)
@@ -136,7 +135,7 @@ tests =
         v2 :: Value <- send $ procedure (var rv)
         assert ((,) <$> v1 <*> pure v2) ("Hello",Null)
     ]
-  , Group "Exceptions"
+  , Tests "Exceptions"
     [ TestA "command throw" $ \ API{..} -> do
         send $ command $ "throw 'Command Fail';"
         assert (pure ()) ()
@@ -144,19 +143,19 @@ tests =
         v :: Either JavaScriptException Value <- E.try $ send $ procedure $ "(function(){throw 'Command Fail';})()"
         assert (pure v) (Left $ JavaScriptException $ String "Command Fail")
     ]
-  , Group "Functions"
+  , Tests "Functions"
     [ TestA "function $ id" $ \ API{..} -> do
         rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ v -> pure v
         v :: Result Int <- send $ fromJSON <$> procedure (val rv <> "(4)");
         assert v (4 :: Int)
     ]
-  , Group "Events"
+  , Tests "Events"
     [ TestA "event" $ \ API{..} -> do
         send $ command ("event('Hello, World')");        
         event <- recv 
         assert event (String "Hello, World" :: Value)
     ]
-  , Group "Remote Monad"
+  , Tests "Remote Monad"
     [ TestM "remote monad procedure chain" $ \ API{..} -> do
         vs :: Result Int <- fromJSON <$>
           (send $ foldM (\ (r :: Value) (i :: Int) -> procedure $ val r <> "+" <> val i)
@@ -172,7 +171,7 @@ tests =
         v :: Result Int <- fromJSON <$> (send $ procedure $ val rv)
         assert v (sum [0..100])
     ]
-  , Group "Alive Connection"
+  , Tests "Alive Connection"
     [ TestM "before wait" $ \ API{..} -> do
         assert (pure ()) ()
     , TestM "after wait for 80" $ \ API{..} -> do
@@ -191,23 +190,41 @@ assert (Success n) g
   | n == g    = return $ Nothing
   | otherwise = return $ Just $ show ("assert failure",n,g)
 
-table :: [Test] -> String
+table :: [Tests] -> String
 table ts = go0 [] ts 
   where
-    go0 p ts = "<ul>" ++ concatMap (\ (t,n) -> go (n:p) t) (zip ts [0..]) ++ "</ul>"
+    go0 p ts = concatMap (\ (t,n) -> go1 (n:p) t) (zip ts [0..])
 
-    go p (Group txt ts) = "<li>" ++ txt ++ "</li>" ++ go0 p ts
-    go p (TestA txt _) = "<li><span>" ++ txt ++ "</span>...." ++
-                       "<span><span id=\"" ++ tag p ++ "-m\">Monad</span>, " ++
-                       "<span id=\"" ++ tag p ++ "-a\">Applicative</span></span>"
-    go p (TestM txt _) = "<li><span>" ++ txt ++ "</span>...." ++
-                       "<span id=\"" ++ tag p ++ "-m\">Monad</span>"
+    go1 p (Tests txt ts) = unlines
+      [ "<div class=\"row\">" ++
+        "<div class=\"col-3\">" ++
+         pre ++
+        "</div>" ++
+        "<div class=\"col-5\">" ++
+        tst ++
+        "</div>" ++
+        "<div class=\"col-2\">" ++
+        mon ++
+        "</div>" ++
+        "<div class=\"col-2\">" ++
+        app ++
+        "</div>" ++        
+        "</div>"
+      | (t,n) <- ts `zip` [0..]
+      , let pre | n == 0 = txt
+                | otherwise = ""
+      , let (tst,mon,app) = go (n:p) t
+      ]
+
+    go p (TestA txt _) = (txt,bar p "a",bar p "m")
+    go p (TestM txt _) = (txt,"",bar p "m")
+
+    bar p a = "<div class=\"progress\"><div id=\"" ++ tag p ++ "-" ++ a ++ "\" class=\"progress-bar\" role=\"progressbar\" style=\"width: 0%;\"></div></div>"
 
 tag :: [Int] -> String
 tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 
 runTest :: Engine -> [Int] -> Test -> IO ()
-runTest e p (Group txt ts) = runTests e p ts
 runTest e p (TestA txt k) = do
   recv <- doRecv e
   doTest (API (JS.send e) recv)  "-m" p k
@@ -225,17 +242,23 @@ doRecv e = do
         atomically $ (pure <$> readTChan es)
                      `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")        
 
-doTest :: Command f => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
+doTest :: (Applicative f, Command f) => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
 doTest api@API{..} suff p k = do
+  print ("do Test" :: String)
   rM <- k api
   case rM of
-    Nothing -> send $ command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('pass');"
+    Nothing -> do
+      send $
+       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').style.width='100%'") *>
+       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('bg-success')")
     Just msg -> do
       print ("doTest failed"::String,msg)
-      send $ command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('fail');"
+      send $
+       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').style.width='100%'") *>
+       (command $ "document.getElementById('" <> T.pack (tag p ++ suff) <> "').classList.add('bg-danger')")
 
-runTests :: Engine -> [Int] -> [Test] -> IO ()
-runTests e p ts = sequence_ [ runTest e (n:p) t | (t,n) <- ts `zip` [0..]]
+runTests :: Engine -> [Int] -> [Tests] -> IO ()
+runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
 
 example :: Engine -> IO ()
 example e = runTests e [] tests
