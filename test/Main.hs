@@ -59,6 +59,22 @@ main_ i = do
                ,     "jsb.onmessage = (evt) => eval(evt.data);"
                     -- remote object to allow interesting commands and procedures
                ,     "var remote = [];"
+               ,     "var stepme = function(dom,s) {"
+               ,     "   var start = null;"
+               ,     "   function step(timestamp) {"
+               ,     "      if (!start) start = timestamp;"
+               ,     "      if (dom.classList.contains('bg-success') || dom.classList.contains('bg-danger')) return;"
+               ,     "      var progress = parseInt((timestamp - start) * 100 / (1000 * s));"
+               ,     "      dom.style.width='' + progress + '%';"
+               ,     "      dom.innerHTML='' + progress + '%';"
+               ,     "      if (progress < 100) {"
+               ,     "        window.requestAnimationFrame(step);"
+               ,     "      } else {"               
+               ,     "       dom.classList.add('bg-danger');"
+               ,     "      }"
+               ,     "    }"
+               ,     "    requestAnimationFrame(step);"
+               ,     "};"
                ,   "</script>"
                , "</body>"
                , "</html>"
@@ -174,15 +190,15 @@ tests =
         v :: Int <- (send $ procedure $ value rv)
         assert v (sum [0..100])
     ]
-  , Tests "Alive Connection"
+  , Tests "Alive Connection" $
     [ TestM "before wait" $ \ API{..} -> do
         assert () ()
-    , TestM "after wait for 80" $ \ API{..} -> do
-        send $ command ("event('Hello, World')");        
-        let w = 80
+    ] ++ [ TestM ("after wait for " ++ show w) $ \ API{..} -> do
+        send $ command $ "stepme(" <> var progressBar <> "," <> value (fromIntegral w * 1.2 :: Float) <> ")"
         _ <- threadDelay $ w * 1000 * 1000
         assert () ()
-    ]
+        | w <- [3,10,80]
+        ]
   ]
 
 ------------------------------------------------------------------------------
@@ -254,13 +270,15 @@ doTest api@API{..} suff p k = do
     Nothing -> do
       send $
        (command $ var progressBar <> ".style.width='100%'") *>
-       (command $ var progressBar <> ".classList.add('bg-success')")
+       (command $ var progressBar <> ".classList.add('bg-success')") *>
+       (command $ var progressBar <> ".innerHTML=''")       
     Just msg -> do
       print ("doTest failed"::String,msg)
       send $
        (command $ var progressBar <> ".style.width='100%'") *>
-       (command $ var progressBar <> ".classList.add('bg-danger')")
-
+       (command $ var progressBar <> ".classList.add('bg-danger')") *>
+       (command $ var progressBar <> ".innerHTML=''")
+       
 runTests :: Engine -> [Int] -> [Tests] -> IO ()
 runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
 
