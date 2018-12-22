@@ -23,7 +23,8 @@ source-repository head
 
 library
   exposed-modules:     Network.JavaScript,
-                       Network.JavaScript.Services 
+                       Network.JavaScript.Services, 
+                       Network.JavaScript.Internal
   -- other-modules:
   -- other-extensions:
   build-depends:       base                 >= 4.8     && < 4.13
