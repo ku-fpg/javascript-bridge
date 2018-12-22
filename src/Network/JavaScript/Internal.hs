@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# OPTIONS_GHC -w #-}
+{-# OPTIONS_GHC -v #-}
 module Network.JavaScript.Internal
   ( -- * Remote Applicative Packets of JavaScript
     Command(..)
@@ -12,11 +12,6 @@ module Network.JavaScript.Internal
   , Packet(..)
   , RemoteMonad(..)
   , Primitive(..)
-  , command
-  , procedure
-  , constructor
-  , function
-  , continuation
   , RemoteValue(..)
   , AF(..)
   , M(..)
@@ -25,36 +20,16 @@ module Network.JavaScript.Internal
   , evalM
   ) where
 
-import Control.Applicative((<|>),liftA2)
-import Control.Exception(Exception)
-import Control.Exception as Exception
-import Data.Monoid ((<>))
-import qualified Data.Text.Lazy as LT
-import qualified Network.Wai.Handler.WebSockets as WS
-import Network.Wai (Application)
-import qualified Network.WebSockets as WS
-import Control.Monad.Trans.State.Strict
+import           Data.Text.Lazy(Text)
 
-import Control.Concurrent (forkIO)
-import Control.Exception (try, SomeException)
-import Control.Monad (forever)
-import Control.Concurrent.STM
-import Data.Aeson ( Value(..), decode', FromJSON(..),withObject,(.:)
-                  , ToJSON(..), encode, Result(..), fromJSON)
-import Data.Text.Lazy.Encoding(decodeUtf8,encodeUtf8)
-import qualified Data.Aeson.Encoding.Internal as AI
-import qualified Data.Binary.Builder as B
-import qualified Data.IntMap.Strict as IM
-
-
-import Network.JavaScript.Services
+import Data.Aeson (Value(..), FromJSON(..))
 
 ------------------------------------------------------------------------------
 
 class Command f where
   -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, which may be reported to console.log.
-  command :: LT.Text -> f ()
+  command :: Text -> f ()
   -- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
   --   Should never throw an exception, but any exceptions are returned to the 'send'
   --   as Haskell exceptions.
@@ -62,7 +37,7 @@ class Command f where
   --   The value returned in not returned to Haskell. Instead, a handle is returned,
   --   that can be used to access the remote value. Examples of remote values include
   --   objects that can not be serialized, or values that are too large to serialize.
-  constructor :: LT.Text -> f (RemoteValue a)
+  constructor :: Text -> f (RemoteValue a)
 
   -- | a 'function' takes a Haskell function, and converts
   --   it into a JavaScript function. This can be used to 
@@ -72,24 +47,11 @@ class Command f where
 
            -> f (RemoteValue (a -> IO b))
 
-  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
-               -> f (RemoteValue (a -> IO ()))
+--  continuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
+--               -> f (RemoteValue (a -> IO ()))
 
 class Procedure f where
-  proc :: FromJSON a => LT.Text -> f a
-
--- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
---   Should never throw an exception, but any exceptions are returned to the 'send'
---   as Haskell exceptions.
---
---   Procedures can return Promises. Before completing the transaction, all the values
---   for all the procedures that are promises are fulfilled (using Promises.all).
---
---  If a procedure throws an exception, future commands and procedures in
---  the same packet will not be executed. Use promises to allow all commands and
---  procedures to be invoked, if needed.
-procedure :: forall a f . (Procedure f, FromJSON a) => LT.Text -> f a
-procedure = proc
+  proc :: FromJSON a => Text -> f a
   
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -100,10 +62,10 @@ newtype RemoteMonad a = RemoteMonad (M Primitive a)
   deriving (Functor, Applicative, Monad)
 
 data Primitive :: * -> * where
-  Command   :: LT.Text -> Primitive ()
-  Procedure :: LT.Text -> Primitive Value
-  Procedure' :: FromJSON a => LT.Text -> Primitive a
-  Constructor :: LT.Text -> Primitive (RemoteValue a)
+  Command   :: Text -> Primitive ()
+  Procedure :: Text -> Primitive Value
+  Procedure' :: FromJSON a => Text -> Primitive a
+  Constructor :: Text -> Primitive (RemoteValue a)
   Function :: (RemoteValue (a -> IO b) -> RemoteValue a -> Packet (RemoteValue b))
            -> Primitive (RemoteValue (a -> IO b))
 

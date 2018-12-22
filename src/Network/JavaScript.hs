@@ -17,7 +17,7 @@ module Network.JavaScript
   , function
   , sync
   , localize
-  , continuation
+--  , continuation
     -- * sending Packets
   , send
   , sendA
@@ -63,6 +63,19 @@ import Network.JavaScript.Internal
 
 ------------------------------------------------------------------------------
   
+-- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
+--   Should never throw an exception, but any exceptions are returned to the 'send'
+--   as Haskell exceptions.
+--
+--   Procedures can return Promises. Before completing the transaction, all the values
+--   for all the procedures that are promises are fulfilled (using Promises.all).
+--
+--  If a procedure throws an exception, future commands and procedures in
+--  the same packet will not be executed. Use promises to allow all commands and
+--  procedures to be invoked, if needed.
+procedure :: forall a f . (Procedure f, FromJSON a) => LT.Text -> f a
+procedure = proc
+
 as :: (FromJSON a, Procedure g) => (forall f . Command f => f (RemoteValue a)) -> g a
 as (Packet (PrimAF (Constructor cmd))) = procedure cmd
 -- is@Int $ command "fooo"
