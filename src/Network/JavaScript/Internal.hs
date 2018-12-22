@@ -15,8 +15,9 @@ module Network.JavaScript.Internal
   , Procedure()
   , internalProcedure
     -- * Primitives and (Remote) Values
-  , RemoteValue(..)
   , Primitive(..)
+  , RemoteValue(..)
+  , var
     -- * (Applicative) Packets
   , Packet(..)
   , AF(..)
@@ -28,9 +29,13 @@ module Network.JavaScript.Internal
   , evalM
   ) where
 
-import           Data.Text.Lazy(Text)
+import           Data.Aeson (ToJSON(..), FromJSON(..))
+import qualified Data.Aeson.Encoding.Internal as AI
+import qualified Data.Binary.Builder as B
+import           Data.Monoid ((<>))
+import           Data.Text.Lazy(Text, pack)
+import           Data.Text.Lazy.Encoding(encodeUtf8)
 
-import Data.Aeson (FromJSON(..))
 
 ------------------------------------------------------------------------------
 
@@ -81,6 +86,17 @@ instance Procedure RemoteMonad where
 data RemoteValue a = RemoteValue Int
                    | RemoteArgument Int
   deriving (Eq, Ord, Show)
+
+-- Remote values can not be encoded in JSON, but are JavaScript variables.
+instance ToJSON (RemoteValue a) where
+  toJSON = error "toJSON not supported for RemoteValue"
+  toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
+
+-- | generate the text for a RemoteValue. They can be used as assignment
+--   targets as well, but exposes the JavaScript scoping semantics.
+var :: RemoteValue a -> Text
+var (RemoteValue n) = "jsb.c" <> pack (show n)
+var (RemoteArgument n) = "a" <> pack (show n)
 
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad

@@ -149,7 +149,7 @@ tests =
   , Tests "Functions"
     [ TestA "function $ id" $ \ API{..} -> do
         rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ _ v -> pure v
-        v :: Int <- send $ procedure (val rv <> "(4)");
+        v :: Int <- send $ procedure (var rv <> "(4)");
         assert v (4 :: Int)
     ]
   , Tests "Events"
@@ -161,17 +161,17 @@ tests =
   , Tests "Remote Monad"
     [ TestM "remote monad procedure chain" $ \ API{..} -> do
         vs :: Value <- 
-          (send $ foldM (\ (r :: Value) (i :: Int) -> procedure $ val r <> "+" <> val i)
+          (send $ foldM (\ (r :: Value) (i :: Int) -> procedure $ value r <> "+" <> value i)
                            (toJSON (0 :: Int))
                            [0..100])
         assert vs (toJSON $ sum [0..100::Int])
     , TestM "remote monad constructor chain" $ \ API{..} -> do
         rv <- send $ constructor "0"
         rv :: RemoteValue () <- 
-          (send $ foldM (\ (r :: RemoteValue ()) (i :: Int) -> constructor $ val r <> "+" <> val i)
+          (send $ foldM (\ (r :: RemoteValue ()) (i :: Int) -> constructor $ value r <> "+" <> value i)
                            rv
                            [0..100])
-        v :: Int <- (send $ procedure $ val rv)
+        v :: Int <- (send $ procedure $ value rv)
         assert v (sum [0..100])
     ]
   , Tests "Alive Connection"
@@ -253,13 +253,13 @@ doTest api@API{..} suff p k = do
   case rM of
     Nothing -> do
       send $
-       (command $ val progressBar <> ".style.width='100%'") *>
-       (command $ val progressBar <> ".classList.add('bg-success')")
+       (command $ var progressBar <> ".style.width='100%'") *>
+       (command $ var progressBar <> ".classList.add('bg-success')")
     Just msg -> do
       print ("doTest failed"::String,msg)
       send $
-       (command $ val progressBar <> ".style.width='100%'") *>
-       (command $ val progressBar <> ".classList.add('bg-danger')")
+       (command $ var progressBar <> ".style.width='100%'") *>
+       (command $ var progressBar <> ".classList.add('bg-danger')")
 
 runTests :: Engine -> [Int] -> [Tests] -> IO ()
 runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]

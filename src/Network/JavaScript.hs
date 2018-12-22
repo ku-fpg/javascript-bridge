@@ -24,9 +24,10 @@ module Network.JavaScript
   , sendE
     -- * Remote and Local Values
   , RemoteValue
-  , var
-  , val
   , delete
+    -- * Text builders
+  , var
+  , value
     -- * Events
   , JavaScriptException(..)
   , addListener
@@ -195,7 +196,7 @@ data Stmt a where
   ProcedureStmt :: FromJSON a => Int -> Text -> Stmt a
   ConstructorStmt :: RemoteValue a -> Text -> Stmt (RemoteValue a)
 
---deriving instance Show (Stmt a)
+deriving instance Show (Stmt a)
   
 prepareStmtA :: Monad f => f Int -> AF Primitive a -> f (AF Stmt a)
 prepareStmtA _  (PureAF a) = pure (pure a)
@@ -217,7 +218,7 @@ prepareStmt ug (Function k) = do
     Just a -> do
       -- Technically, we can handle a single procedure,
       -- as the final primitive, but using return (..the prim..).
-      let funWrapper xs = "function(" <> val a0 <> "){" <> xs <> "return " <> val a <> ";}"
+      let funWrapper xs = "function(" <> var a0 <> "){" <> xs <> "return " <> value a <> ";}"
       return $ ConstructorStmt (RemoteValue j)
              $ funWrapper
              $ serializeA ss
@@ -292,25 +293,14 @@ procVar n = "v" <> LT.pack (show n)
 
 ------------------------------------------------------------------------------
 
--- Remote values can not be encoded in JSON, but are JavaScript variables.
-instance ToJSON (RemoteValue a) where
-  toJSON = error "toJSON not supported for RemoteValue"
-  toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
-
--- | generate the text for a JavaScript value, including RemoteValues.
-val :: ToJSON v => v -> Text
-val = decodeUtf8 . encode
-
--- | generate the text for a RemoteValue
-var :: RemoteValue a -> Text
-var (RemoteValue n) = "jsb.c" <> LT.pack (show n)
-var (RemoteArgument n) = "a" <> LT.pack (show n)
-
 -- | 'delete' a remote value.
 delete :: Command f => RemoteValue a -> f ()
 delete rv = command $ "delete " <> var rv
 
 -- | 'localize' brings a remote value into Haskell.
 localize :: Procedure f => RemoteValue a -> f Value
-localize = procedure . val
+localize = procedure . var
 
+-- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
+value :: ToJSON v => v -> Text
+value = decodeUtf8 . encode
