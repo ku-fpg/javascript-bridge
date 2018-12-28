@@ -11,8 +11,7 @@ category:            Network
 build-type:          Simple
 extra-source-files:  CHANGELOG.md, README.md
 cabal-version:       >=1.10
-tested-with:         GHC == 7.10.3
-                   , GHC == 8.0.2
+tested-with:         GHC == 8.0.2
                    , GHC == 8.2.2
                    , GHC == 8.4.4
                    , GHC == 8.6.3
@@ -23,11 +22,11 @@ source-repository head
 
 library
   exposed-modules:     Network.JavaScript,
-                       Network.JavaScript.Services, 
+                       Network.JavaScript.Services,
                        Network.JavaScript.Internal
   -- other-modules:
   -- other-extensions:
-  build-depends:       base                 >= 4.8     && < 4.13
+  build-depends:       base                 >= 4.9     && < 4.13
                      , binary               >= 0.8     && < 0.9
                      , aeson                >= 1.0     && < 1.5
                      , containers           >= 0.5     && < 0.7
@@ -47,14 +46,14 @@ library
 test-suite javascript-bridge-test
   type:       exitcode-stdio-1.0
   main-is:             Main.hs
-  build-depends:       base                 >= 4.8 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.13
                      , aeson                >= 1.0 && < 1.5
                      , javascript-bridge
                      , scotty               == 0.11.*
-                     , wai-extra            >= 3.0 
+                     , wai-extra            >= 3.0
                      , stm                  >= 2.4 && < 2.6
                      , text                 >= 1.2 && < 1.3
-                     , time                 >= 1.4 && < 1.10
+                     , time                 >= 1.6 && < 1.10
   hs-source-dirs:      test
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
