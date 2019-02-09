@@ -6,7 +6,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import qualified Control.Exception as E
-import Control.Monad (forever, foldM)
+import Control.Monad (forever, foldM, void)
 import Data.Aeson
 import Data.Monoid((<>))
 import qualified Data.Text.Lazy as T
@@ -22,7 +22,7 @@ main_ :: Int -> IO ()
 main_ i = do
         lock <- newEmptyMVar
 
-        _ <- forkIO $ scotty i $ do
+        void $ forkIO $ scotty i $ do
 --          middleware $ logStdout
           
           middleware $ start $ \ e -> example e `E.finally`
@@ -56,8 +56,8 @@ main_ i = do
                , T.pack (table tests)
                , "</div>"
                ,   "<script>"
-               ,     "jsb = new WebSocket('ws://' + location.host + '/');"
-               ,     "jsb.onmessage = (evt) => eval(evt.data);"
+               ,     "window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};"
+               ,     "jsb.ws.onmessage = (evt) => eval(evt.data);"
                     -- remote object to allow interesting commands and procedures
                ,     "var remote = [];"
                ,     "var stepme = function(dom,s) {"
@@ -171,7 +171,7 @@ tests =
     ]
   , Tests "Events"
     [ TestA "event" $ \ API{..} -> do
-        send $ command ("event('Hello, World')");        
+        send $ command ("jsb.event('Hello, World')");        
         event <- recv
         assert event (Success $ toJSON ("Hello, World" :: String))
     ]

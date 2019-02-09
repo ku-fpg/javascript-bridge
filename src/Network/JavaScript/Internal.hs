@@ -95,7 +95,7 @@ instance ToJSON (RemoteValue a) where
 -- | generate the text for a RemoteValue. They can be used as assignment
 --   targets as well, but exposes the JavaScript scoping semantics.
 var :: RemoteValue a -> Text
-var (RemoteValue n) = "jsb.c" <> pack (show n)
+var (RemoteValue n) = "jsb.rs[" <> pack (show n) <> "]"
 var (RemoteArgument n) = "a" <> pack (show n)
 
 ------------------------------------------------------------------------------

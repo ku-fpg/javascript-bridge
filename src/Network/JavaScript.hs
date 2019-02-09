@@ -269,7 +269,7 @@ sendStmtA e af
   where
     catchMe :: Int -> Text -> Text
     catchMe nonce txt =
-      "try{" <> txt <> "}catch(err){error(" <> LT.pack (show nonce) <> ",err);};" <>
+      "try{" <> txt <> "}catch(err){jsb.error(" <> LT.pack (show nonce) <> ",err);};" <>
       reply nonce <> ";"
 
     assignments :: [Int]
@@ -282,7 +282,7 @@ sendStmtA e af
     -- generate the call to reply (as a final command)
     reply :: Int -> Text
     reply n =
-      "reply(" <> LT.intercalate ","
+      "jsb.reply(" <> LT.intercalate ","
       [ LT.pack (show n)
       , "[" <> LT.intercalate "," (map procVar assignments) <> "]"
       ] <> ")"

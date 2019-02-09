@@ -92,25 +92,28 @@ data Engine = Engine
 
 bootstrap :: LT.Text
 bootstrap =   LT.unlines
-   [     "jsb.onmessage = function(evt){ "
-   ,     "   var error = function(n,err) {"
-   ,     "         jsb.send(JSON.stringify({id: n, error: err}));"
+   [     "jsb.event =  function(ev) {"
+   ,     "         if (jsb.debug) { console.log('event',{event: ev}); }"
+   ,     "         jsb.ws.send(JSON.stringify({event: ev}));"
+   ,     "   };"
+   ,     "jsb.error = function(n,err) {"
+   ,     "         if (jsb.debug) { console.log('send',{id: n, error: err}); }"
+   ,     "         jsb.ws.send(JSON.stringify({id: n, error: err}));"
    ,     "         throw(err);"
-   ,     "   };"
-   ,     "   var event = function(ev) {"
-   ,     "         jsb.send(JSON.stringify({event: ev}));"
-   ,     "   };"
-   ,     "   var reply = function(n,obj) {"
+   ,     "   };"   
+   ,     "jsb.reply = function(n,obj) {"
    ,     "       Promise.all(obj).then(function(obj){"
    ,     "         if (jsb.debug) { console.log('reply',{id:n, result:obj}); }"   
-   ,     "         jsb.send(JSON.stringify({id: n, result: obj}));"
+   ,     "         jsb.ws.send(JSON.stringify({id: n, result: obj}));"
    ,     "       }).catch(function(err){"
-   ,     "         error(n,err);"
+   ,     "         jsb.error(n,err);"
    ,     "       });"
    ,     "   };"
+   ,     "jsb.ws.onmessage = function(evt){ "
    ,     "   if (jsb.debug) { console.log('eval',evt.data); }"
    ,     "   eval('(function(){' + evt.data + '})()');"
    ,     "};"
+   ,     "jsb.rs = [];"
    ]
 
 -- | Add a listener for events. These are chained.
