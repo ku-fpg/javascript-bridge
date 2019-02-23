@@ -7,7 +7,7 @@ module Network.JavaScript.Services
     Engine(..)
   , start
   , addListener
-  , setListener
+  , events
   ) where
 
 import Control.Applicative((<|>),liftA2)
@@ -26,6 +26,8 @@ import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
+
+import Network.JavaScript.Reactive(Event, eventIO, sinkE)
 
 -- | This accepts WebSocket requests.
 --
@@ -47,11 +49,13 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   -- Handling packets
   nonceRef <- newTVarIO 0
   replyMap <- newTVarIO IM.empty
-  listenerRef <- newTVarIO $ \ _ -> return ()
+  eventQueue <- newTQueueIO
+  events <- eventIO $ atomically $ readTQueue eventQueue
+  
   let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
   _ <- forkIO $ catchMe $ forever $ do
     d <- WS.receiveData conn
---    print d
+    print d
     case decode' d of
       Just (Result _ []) -> return ()
       Just (Result n replies) -> atomically
@@ -64,8 +68,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                       $ IM.insert n
                       $ Left
                       $ obj
-      Just (Event event) -> do kV <- atomically $ readTVar listenerRef
-                               kV event
+      Just (Event event) -> atomically $ writeTQueue eventQueue event
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
   kE $ Engine
@@ -79,7 +82,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
          case IM.lookup n t of
            Nothing -> retry
            Just v -> return v
-     , listener = listenerRef
+     , events = events
      }
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
@@ -87,7 +90,7 @@ data Engine = Engine
   { sendText :: LT.Text -> IO ()      -- send text to the JS engine
   , genNonce ::            IO Int     -- nonce generator
   , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
-  , listener :: TVar (Value -> IO ()) -- listener(s)
+  , events :: Event Value -- This will cause a spaceleak of all events
   }
 
 bootstrap :: LT.Text
@@ -121,14 +124,16 @@ bootstrap =   LT.unlines
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
 addListener :: Engine -> (Value -> IO ()) -> IO ()
-addListener engine k = atomically $ modifyTVar (listener engine) $ \ f v -> f v >> k v
+addListener engine k = do
+  _ <- forkIO $ sinkE k $ events engine
+  return ()
 
 -- | Set a listener for events. Previous listeners are discarded.
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-setListener :: Engine -> (Value -> IO ()) -> IO ()
-setListener engine k = atomically $ modifyTVar (listener engine) $ const k
+--setListener :: Engine -> (Value -> IO ()) -> IO ()
+--setListener engine k = atomically $ modifyTVar (listener engine) $ const k
 
 ------------------------------------------------------------------------------
 

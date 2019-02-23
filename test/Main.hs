@@ -258,7 +258,7 @@ runTest e p (TestM txt k) = do
 doRecv :: Engine -> IO (IO (Result Value))
 doRecv e = do
   es <- newTChanIO
-  setListener e $ atomically . writeTChan es
+  addListener e $ atomically . writeTChan es
   return $ do
         wait <- registerDelay $ 1000 * 1000
         atomically $ (pure <$> readTChan es)
