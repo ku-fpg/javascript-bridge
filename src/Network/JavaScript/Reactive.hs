@@ -8,6 +8,7 @@ import Network.JavaScript.Future
 import Control.Applicative
 import Control.Monad
 import Data.Semigroup
+import Control.Concurrent(forkIO,ThreadId)
 
 data Reactive a = a `Stepper` Event a
 
@@ -34,7 +35,6 @@ instance Monad Reactive where
   r >>= k = joinR (fmap k r)
 
 newtype Event a = Event (Future (Reactive a))
-
 instance Functor Event where
   fmap f (Event m) = Event $ fmap (fmap f) m
 
@@ -73,10 +73,16 @@ instance Alternative Event where
 
 instance MonadPlus Event -- use default
 
+forkE :: (a -> IO ()) -> Event a -> IO ThreadId
+forkE k = forkIO . sinkE k
+
 sinkE :: (a -> IO ()) -> Event a -> IO ()
 sinkE snk (Event f) = do
   (_,r) <- force f
   sinkR snk r
+
+forkR :: (a -> IO ()) -> Reactive a -> IO ThreadId
+forkR k = forkIO . sinkR k
 
 sinkR :: (a -> IO ()) -> Reactive a -> IO ()
 sinkR snk (a `Stepper` r) = snk a >> sinkE snk r
@@ -104,3 +110,7 @@ pairReactives (a `Stepper` Event f) = pairEvents a (Event f)
 pairEvents :: a -> Event a -> Event (a,a)
 pairEvents a (Event f) = Event $
   fmap (\ (a' `Stepper` e') -> (a,a') `Stepper` pairEvents a' e') f
+
+singletonE :: Future a -> Event a
+singletonE = Event . fmap (`Stepper` mempty)
+
