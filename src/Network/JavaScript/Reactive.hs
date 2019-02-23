@@ -1,7 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- Conal's Push-Pull Future. Taken from the paper.
-module Network.JavaScript.Reactive where
+module Network.JavaScript.Reactive
+  ( module Network.JavaScript.Reactive,
+    ThreadId,
+  ) where
 
 import Network.JavaScript.Future
 

@@ -27,7 +27,7 @@ fib m | m < 0     = error "negative!"
 -- Our benchmark harness.
 main = do
         scotty 3000 $ do
-          middleware $ start $ \ e -> test e `E.finally`
+          middleware $ start $ \ _ e -> test e `E.finally`
                        (putStrLn "Finished example")
 
           get "/" $ do

@@ -25,7 +25,7 @@ main_ i = do
         void $ forkIO $ scotty i $ do
 --          middleware $ logStdout
           
-          middleware $ start $ \ e -> example e `E.finally`
+          middleware $ start $ \ ev e -> example ev e `E.finally`
                        (do putMVar lock ()
                            putStrLn "Finished example")
 
@@ -243,22 +243,22 @@ table ts = go0 [] ts
 tag :: [Int] -> String
 tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 
-runTest :: Engine -> [Int] -> Test -> IO ()
-runTest e p (TestA txt k) = do
-  recv <- doRecv e
+runTest :: Event Value -> Engine -> [Int] -> Test -> IO ()
+runTest ev e p (TestA txt k) = do
+  recv <- doRecv ev e
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   aBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-a") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
   doTest (API (JS.sendA e) recv aBar) "-a" p k
-runTest e p (TestM txt k) = do
-  recv <- doRecv e
+runTest ev e p (TestM txt k) = do
+  recv <- doRecv ev e
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
 
-doRecv :: Engine -> IO (IO (Result Value))
-doRecv e = do
+doRecv :: Event Value -> Engine -> IO (IO (Result Value))
+doRecv ev e = do
   es <- newTChanIO
-  addListener e $ atomically . writeTChan es
+  addListener ev $ atomically . writeTChan es
   return $ do
         wait <- registerDelay $ 1000 * 1000
         atomically $ (pure <$> readTChan es)
@@ -283,8 +283,8 @@ doTest api@API{..} suff p k = do
        (command $ var progressBar <> ".classList.add('bg-danger')") *>
        (command $ var progressBar <> ".innerHTML=" <> value tm)       
        
-runTests :: Engine -> [Int] -> [Tests] -> IO ()
-runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
+runTests :: Event Value -> Engine -> [Int] -> [Tests] -> IO ()
+runTests ev e p ts = sequence_ [ runTest ev e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
 
-example :: Engine -> IO ()
-example e = runTests e [] tests
+example :: Event Value -> Engine -> IO ()
+example ev e = runTests ev e  [] tests

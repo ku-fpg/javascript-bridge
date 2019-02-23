@@ -31,7 +31,7 @@ module Network.JavaScript
     -- * Events
   , JavaScriptException(..)
   , addListener
-  , events
+  , Event
   -- * Web services
   , start
   , Engine
@@ -60,8 +60,9 @@ import qualified Data.Binary.Builder as B
 import qualified Data.IntMap.Strict as IM
 
 
-import Network.JavaScript.Services
 import Network.JavaScript.Internal
+import Network.JavaScript.Reactive
+import Network.JavaScript.Services
 
 ------------------------------------------------------------------------------
 

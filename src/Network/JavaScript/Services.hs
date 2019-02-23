@@ -7,7 +7,6 @@ module Network.JavaScript.Services
     Engine(..)
   , start
   , addListener
-  , events
   ) where
 
 import Control.Applicative((<|>),liftA2)
@@ -27,7 +26,7 @@ import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
 
-import Network.JavaScript.Reactive(Event, eventIO, sinkE)
+import Network.JavaScript.Reactive(Event, eventIO, forkE, ThreadId)
 
 -- | This accepts WebSocket requests.
 --
@@ -38,7 +37,7 @@ import Network.JavaScript.Reactive(Event, eventIO, sinkE)
 --
 -- listeners are added using the 'Engine' handle
 
-start :: (Engine -> IO ())
+start :: (Event Value -> Engine -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
@@ -71,7 +70,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
       Just (Event event) -> atomically $ writeTQueue eventQueue event
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
-  kE $ Engine
+  kE events $ Engine
      { sendText = WS.sendTextData conn
      , genNonce = atomically $ do
          n <- readTVar nonceRef
@@ -82,7 +81,6 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
          case IM.lookup n t of
            Nothing -> retry
            Just v -> return v
-     , events = events
      }
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
@@ -90,7 +88,6 @@ data Engine = Engine
   { sendText :: LT.Text -> IO ()      -- send text to the JS engine
   , genNonce ::            IO Int     -- nonce generator
   , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
-  , events :: Event Value -- This will cause a spaceleak of all events
   }
 
 bootstrap :: LT.Text
@@ -119,21 +116,12 @@ bootstrap =   LT.unlines
    ,     "jsb.rs = [];"
    ]
 
--- | Add a listener for events. These are chained.
+-- | Add a listener for events. There can be many.
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-addListener :: Engine -> (Value -> IO ()) -> IO ()
-addListener engine k = do
-  _ <- forkIO $ sinkE k $ events engine
-  return ()
-
--- | Set a listener for events. Previous listeners are discarded.
---
---   From javascript, you can call event(..) to send
---   values to this listener. Any valid JSON value can be sent.
---setListener :: Engine -> (Value -> IO ()) -> IO ()
---setListener engine k = atomically $ modifyTVar (listener engine) $ const k
+addListener :: Event Value -> (Value -> IO ()) -> IO ThreadId
+addListener events k = forkE k events
 
 ------------------------------------------------------------------------------
 
