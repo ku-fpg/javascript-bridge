@@ -9,6 +9,7 @@ replacing the comet design pattern based kansas-comet.
     - support Justin Dawson's Blank Canvas and Remote Monad work
     - direct remote monad / remote applicative support
  - Reworked in 2019 to
+    - use Conal's Event implementation for JavaScript events
     - use STM as the underlying timing mechanism for Future
  
 Authors, contributors, or sponsors:

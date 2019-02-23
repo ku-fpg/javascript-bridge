@@ -24,6 +24,7 @@ library
   exposed-modules:     Network.JavaScript,
                        Network.JavaScript.Future,
                        Network.JavaScript.Internal,
+                       Network.JavaScript.Reactive,
                        Network.JavaScript.Services
                         
   -- other-modules:
