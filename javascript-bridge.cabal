@@ -9,7 +9,7 @@ maintainer:          andygill@ku.edu
 copyright:           Copyright (c) 2016 The University of Kansas
 category:            Network
 build-type:          Simple
-extra-source-files:  CHANGELOG.md, README.md
+extra-source-files:  CHANGELOG.md, README.md, HISTORY.md
 cabal-version:       >=1.10
 tested-with:         GHC == 8.0.2
                    , GHC == 8.2.2
@@ -22,8 +22,10 @@ source-repository head
 
 library
   exposed-modules:     Network.JavaScript,
-                       Network.JavaScript.Services,
-                       Network.JavaScript.Internal
+                       Network.JavaScript.Future,
+                       Network.JavaScript.Internal,
+                       Network.JavaScript.Services
+                        
   -- other-modules:
   -- other-extensions:
   build-depends:       base                 >= 4.9     && < 4.13
