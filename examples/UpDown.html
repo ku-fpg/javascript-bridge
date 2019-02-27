@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>UpDown Example</title>
+  </head>
+  <body>
+    <input type="button" value="+1" id="inc-button">
+    <p id="the-text">The Text</p>
+    <input type="button" value="-1" id="dec-button">
+    <script>
+      window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
+      jsb.ws.onmessage = (evt) => eval(evt.data);
+      jsb.debug = true;
+      jsb.render = (o) => {
+          jsb.view = o;
+          document.querySelector('#the-text').textContent = o.text;
+          console.log(o);
+      }
+      jsb.clicker = (id,field) => {
+          document.querySelector(id).onclick = function(e) {      
+              jsb.view && jsb.event({click:jsb.view[field]});
+          }
+      }
+      jsb.clicker('#inc-button','up')
+      jsb.clicker('#dec-button','down')
+      jsb.render({up:0,down:1,text:"..."})
+    </script>
+  </body>
+</html>
