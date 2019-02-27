@@ -1,17 +1,20 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Network.JavaScript.ElmArchitecture where
 
-import Data.Aeson                  (Value,toJSON,FromJSON(..),withObject,(.:))
+import Data.Aeson                  (Value,toJSON,FromJSON(..),withObject,(.:), Result(..),fromJSON)
 import Control.Monad.Trans.State   (State,put,get,runState,execState)
 import Control.Monad.Trans.Writer  (Writer,runWriter,tell)
 
-import Network.JavaScript.Reactive (Event)
+import Network.JavaScript.Reactive (Event, popE)
 import Network.JavaScript.Internal (AF(..),evalAF)
+import Network.JavaScript          (sendA, command, call, value, start, Application)
+
 
 data ElmArchitecture effect msg model = ElmArchitecture
   { update  :: msg -> model -> Update effect model
@@ -100,3 +103,49 @@ step msg (Thing _ k) = k msg
 instance Show msg => Show (Thing msg) where
   show (Thing doc _k) = show doc
 
+
+------------------------------------------------------------------------------
+data RuntimeState msg model = RuntimeState
+  { theModel :: model
+  , theMsgs  :: Event Value
+  }
+  
+
+elmArchitecture :: forall effect msg model f . (Show effect, Show msg)
+                => ElmArchitecture effect msg model
+                -> model
+                -> Application -> Application
+elmArchitecture ea m = start $ \ ev e -> do
+  print "elmArch"
+  let render :: RuntimeState msg model
+             -> IO ()
+      render state@RuntimeState{..} = do
+        let theView = view ea theModel
+        let s0 = 0
+        let (json,_) = runView 0 theView
+        print json
+        sendA e $ command $ call "jsb.render" [value json]
+        wait state theView
+
+      wait :: RuntimeState msg model
+           -> View msg Value
+	   -> IO ()
+      wait state@RuntimeState{..} theView = do
+        (msg,theMsgs') <- popE theMsgs
+        print msg
+        case fromJSON msg of
+          Error{} -> wait state theView
+          Success msg' -> do
+            print msg'
+            case extractTrigger theView 0 msg' of
+              Nothing -> wait state theView
+              Just msg'' -> do
+                print msg''
+                let (theModel', effects) = runUpdate $ update ea msg'' theModel
+                print effects
+                render $ RuntimeState { theModel = theModel'
+                                      , theMsgs = theMsgs'
+                                      }
+  render $ RuntimeState { theModel = m
+                        , theMsgs = ev
+                        }
