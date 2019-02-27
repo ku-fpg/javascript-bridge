@@ -7,6 +7,7 @@ module Network.JavaScript.Services
     Engine(..)
   , start
   , addListener
+  , Application
   ) where
 
 import Control.Applicative((<|>),liftA2)

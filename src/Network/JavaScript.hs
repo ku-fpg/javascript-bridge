@@ -36,6 +36,7 @@ module Network.JavaScript
   -- * Web services
   , start
   , Engine
+  , Application
   ) where
 
 import Control.Applicative((<|>),liftA2)
