@@ -84,6 +84,12 @@ sinkE snk (Event f) = do
   (_,r) <- force f
   sinkR snk r
 
+-- wait for an event, then pop it off.
+popE :: Event a -> IO (a, Event a)
+popE (Event f) = do
+  (_,a `Stepper` as) <- force f
+  return (a,as)
+  
 forkR :: (a -> IO ()) -> Reactive a -> IO ThreadId
 forkR k = forkIO . sinkR k
 
