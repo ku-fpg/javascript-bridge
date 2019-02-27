@@ -1,11 +1,12 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Network.JavaScript.ElmArchitecture where
 
-import Data.Aeson                  (Value,toJSON)
+import Data.Aeson                  (Value,toJSON,FromJSON(..),withObject,(.:))
 import Control.Monad.Trans.State   (State,put,get,runState,execState)
 import Control.Monad.Trans.Writer  (Writer,runWriter,tell)
 
@@ -36,8 +37,8 @@ runView s0 (View m) = runState (evalAF f m) s0
       put (succ s)
       return $ toJSON s
 
-extractTrigger :: View msg a -> Int -> Int -> Maybe msg
-extractTrigger (View m) s0 n =
+extractTrigger :: View msg a -> Int -> WebEvent -> Maybe msg
+extractTrigger (View m) s0 (Click n) =
     snd $ execState (evalAF f m) (s0,Nothing)
   where
     f :: Trigger msg a -> State (Int,Maybe msg) a
@@ -60,6 +61,16 @@ runUpdate (Update m) = runWriter (evalAF f m)
   where
     f :: Effect msg a -> Writer [msg] a
     f (Effect msg) = tell [msg]
+
+------------------------------------------------------------------------------
+
+data WebEvent
+  = Click Int
+  deriving Show
+
+instance FromJSON WebEvent where
+  parseJSON = withObject "Click" $ \v -> Click
+        <$> v .: "click"
 
 ------------------------------------------------------------------------------
 -- Toy tester
@@ -87,5 +98,5 @@ step msg (Thing _ k) = k msg
 
 -- The key debugging step
 instance Show msg => Show (Thing msg) where
-  show (Thing doc k) = show doc
+  show (Thing doc _k) = show doc
 
