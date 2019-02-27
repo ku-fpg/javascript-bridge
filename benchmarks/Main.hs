@@ -47,12 +47,13 @@ main = do
             file "benchmarks.html"
 
 
-call :: (Applicative f, Command f, Procedure f) => Int -> f Int
-call n = sequenceA [ command $ value n | i <- [1..n]] *> (procedure $ value n)
 
 chain :: Engine -> Int -> Int -> IO Int
 chain e n m = send e $ foldM (\ r i -> call m) 0 [1..n]
-
+ where
+   call :: (Applicative f, Command f, Procedure f) => Int -> f Int
+   call n = sequenceA [ command $ value n | i <- [1..n]] *> (procedure $ value n)
+   
 test e = do
   send e $ command $ "document.getElementById('cursor').innerHTML +='Starting tests... '"
   defaultMain [

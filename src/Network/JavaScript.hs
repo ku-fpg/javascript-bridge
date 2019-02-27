@@ -28,6 +28,7 @@ module Network.JavaScript
     -- * Text builders
   , var
   , value
+  , call
     -- * Events
   , JavaScriptException(..)
   , addListener
@@ -305,3 +306,7 @@ localize = procedure . var
 -- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
 value :: ToJSON v => v -> Text
 value = decodeUtf8 . encode
+
+-- | generate a function call
+call :: Text -> [Text] -> Text
+call fn args = fn <> "(" <> LT.intercalate "," args <> ")"
