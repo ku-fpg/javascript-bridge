@@ -123,3 +123,8 @@ pairEvents a (Event f) = Event $
 singletonE :: Future a -> Event a
 singletonE = Event . fmap (`Stepper` mempty)
 
+joinMaybes :: MonadPlus m => m (Maybe a) -> m a
+joinMaybes m = m >>= maybe mzero return
+
+mapMaybe :: MonadPlus m => (a -> Maybe b) -> m a -> m b
+mapMaybe f = joinMaybes . fmap f
