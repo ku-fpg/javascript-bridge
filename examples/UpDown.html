@@ -13,14 +13,16 @@
       window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
       jsb.ws.onmessage = (evt) => eval(evt.data);
       jsb.debug = true;
-      jsb.render = (o) => {
+      jsb.tick = 0;
+      jsb.render = (t,o) => {
+          jsb.tick = t;
           jsb.view = o;
           document.querySelector('#the-text').textContent = o.text;
           console.log(o);
       }
       jsb.clicker = (id,field) => {
           document.querySelector(id).onclick = function(e) {      
-              jsb.view && jsb.event({click:jsb.view[field]});
+              jsb.view && jsb.event({click:jsb.view[field],tick:jsb.tick});
           }
       }
       jsb.clicker('#inc-button','up')

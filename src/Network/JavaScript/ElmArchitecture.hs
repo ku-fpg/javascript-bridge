@@ -108,8 +108,8 @@ instance Show msg => Show (Thing msg) where
 data RuntimeState msg model = RuntimeState
   { theModel :: model
   , theMsgs  :: Event Value
+  , theTick  :: Int
   }
-  
 
 elmArchitecture :: forall effect msg model f . (Show effect, Show msg)
                 => ElmArchitecture effect msg model
@@ -124,7 +124,7 @@ elmArchitecture ea m = start $ \ ev e -> do
         let s0 = 0
         let (json,_) = runView 0 theView
         print json
-        sendA e $ command $ call "jsb.render" [value json]
+        sendA e $ command $ call "jsb.render" [value (0::Int),value json]
         wait state theView
 
       wait :: RuntimeState msg model
@@ -145,7 +145,9 @@ elmArchitecture ea m = start $ \ ev e -> do
                 print effects
                 render $ RuntimeState { theModel = theModel'
                                       , theMsgs = theMsgs'
+                                      , theTick = theTick + 1
                                       }
   render $ RuntimeState { theModel = m
                         , theMsgs = ev
+                        , theTick = 0
                         }
