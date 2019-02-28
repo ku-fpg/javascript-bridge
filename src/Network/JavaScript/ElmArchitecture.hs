@@ -134,11 +134,11 @@ elmArchitecture ea m = start $ \ ev e -> do
         (msg,theMsgs') <- popE theMsgs
         print msg
         case fromJSON msg of
-          Error{} -> wait state theView
+          Error{} -> wait state{theMsgs=theMsgs'} theView
           Success msg' -> do
             print msg'
             case extractTrigger theView 0 msg' of
-              Nothing -> wait state theView
+              Nothing -> wait state{theMsgs=theMsgs'} theView
               Just msg'' -> do
                 print msg''
                 let (theModel', effects) = runUpdate $ update ea msg'' theModel
