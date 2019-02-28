@@ -7,6 +7,7 @@
 
 module Network.JavaScript.ElmArchitecture where
 
+import Control.Applicative         ((<|>))
 import Data.Aeson                  (Value,toJSON,FromJSON(..),withObject,(.:), Result(..),fromJSON)
 import Control.Monad.Trans.State   (State,put,get,runState,execState)
 import Control.Monad.Trans.Writer  (Writer,runWriter,tell)
@@ -27,9 +28,13 @@ newtype View msg a = View (AF (Trigger msg) a)
 
 data Trigger msg a where
   Trigger ::  msg  -> Trigger msg Value
+  SliderTrigger :: (Double -> msg) -> Trigger msg Value
 
 trigger :: msg -> View msg Value
 trigger = View . PrimAF . Trigger
+
+slider :: (Double -> msg) -> View msg Value
+slider =  View . PrimAF . SliderTrigger
 
 runView :: Int -> View msg a -> (a,Int)
 runView s0 (View m) = runState (evalAF f m) s0
@@ -39,15 +44,27 @@ runView s0 (View m) = runState (evalAF f m) s0
       s <- get
       put (succ s)
       return $ toJSON s
+    f (SliderTrigger{}) = do
+      s <- get
+      put (succ s)
+      return $ toJSON s
 
 extractTrigger :: View msg a -> Int -> WebEvent -> Maybe msg
-extractTrigger (View m) s0 (Click n) =
+extractTrigger (View m) s0 webEvent =
     snd $ execState (evalAF f m) (s0,Nothing)
   where
     f :: Trigger msg a -> State (Int,Maybe msg) a
     f (Trigger msg) = do
       (s,i) <- get
-      put (succ s,if s == n then Just msg else i)
+      put (succ s,case webEvent of
+                    Click n | s == n -> Just msg
+                    _ -> i)
+      return $ toJSON s
+    f (SliderTrigger k) = do
+      (s,i) <- get
+      put (succ s,case webEvent of
+                    Slide n v | s == n -> Just $ k v
+                    _ -> i)
       return $ toJSON s
 
 instance Show a => Show (View msg a) where
@@ -69,11 +86,18 @@ runUpdate (Update m) = runWriter (evalAF f m)
 
 data WebEvent
   = Click Int
+  | Slide Int Double
   deriving Show
 
 instance FromJSON WebEvent where
-  parseJSON = withObject "Click" $ \v -> Click
+  parseJSON o = parseClick o <|>
+                parseSlide o
+   where
+     parseClick = withObject "Click" $ \v -> Click
         <$> v .: "click"
+     parseSlide = withObject "Slide" $ \v -> Slide
+        <$> v .: "slide"
+        <*> v .: "value"
 
 ------------------------------------------------------------------------------
 -- Toy tester
