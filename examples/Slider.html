@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Slider Example</title>
+  </head>
+  <body>
+    <input type="range" id="slider" min="0" max="100" step="0.5"/>
+    <p id="the-text">The Text</p>
+    <progress max="100" value="80" id="progress"></progress>
+    <script>
+      window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
+      jsb.ws.onmessage = (evt) => eval(evt.data);
+      jsb.debug = true;
+      jsb.tick = 0;
+      jsb.render = (t,o) => {
+          jsb.tick = t;
+          jsb.view = o;
+          document.querySelector('#slider').value = o.text;
+          document.querySelector('#the-text').textContent = o.text;
+          document.querySelector('#progress').setAttribute('value',o.text);
+          console.log(o);
+      }
+      jsb.slider = (id,field) => {
+	  var el = document.querySelector(id);
+          el.oninput = function(e) {
+	      console.log("slider",id,field,e)
+              jsb.view && jsb.event({slide:jsb.view[field],value:parseFloat(el.value),tick:jsb.tick});
+          }
+      }
+      jsb.slider('#slider','slider')
+    </script>
+  </body>
+</html>
