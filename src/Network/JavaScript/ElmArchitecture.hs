@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Network.JavaScript.ElmArchitecture where
 
@@ -30,6 +31,10 @@ class Widget msg model | model -> msg where
 
   default update :: Applet msg model => msg -> model -> model    
   update  msg model = fst $ runWriter $ applet msg model
+
+instance Widget msg model => Widget (OneOf msg) [model] where
+  update (OneOf n w) ws = take n ws ++ [update w (ws !! n)] ++ drop (n+1) ws
+  view ws = arrayOf (map view ws)
 
 -- Applets can have external effect
 class Widget msg model => Applet msg model where
@@ -72,6 +77,14 @@ array = Array
 
 recv_ :: Remote ()
 recv_ = recv
+
+data OneOf a = OneOf Int a
+
+arrayOf :: [Remote msg] -> Remote (OneOf msg)
+arrayOf rs = array
+  [ OneOf i <$> r
+  | (r,i) <- rs `zip` [0..]
+  ]
 
 sendRemote :: Remote msg -> State Int Value
 sendRemote (Send a) = pure $ toJSON a
