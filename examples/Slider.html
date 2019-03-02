@@ -17,9 +17,9 @@
       jsb.render = (t,o) => {
           jsb.tick = t;
           jsb.view = o;
-          document.querySelector('#slider').value = o.text;
-          document.querySelector('#the-text').textContent = o.text;
-          document.querySelector('#progress').setAttribute('value',o.text);
+          document.querySelector('#slider').value = o.value;
+          document.querySelector('#the-text').textContent = o.value;
+          document.querySelector('#progress').setAttribute('value',o.value);
           console.log(o);
       }
       jsb.slider = (id,field) => {

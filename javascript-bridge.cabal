@@ -30,7 +30,8 @@ library
                        Network.JavaScript.Future,
                        Network.JavaScript.Internal,
                        Network.JavaScript.Reactive,
-                       Network.JavaScript.Services
+                       Network.JavaScript.Services,
+                       Network.JavaScript.Widgets
                         
   -- other-modules:
   -- other-extensions:
