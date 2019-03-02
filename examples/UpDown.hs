@@ -1,5 +1,7 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
 -- import Data.Aeson             
@@ -15,17 +17,17 @@ import Paths_javascript_bridge
 data Msg = Up | Down
   deriving (Eq, Ord, Show)
 
-example :: ElmArchitecture () Msg Int
-example = ElmArchitecture{..}
-  where
-    update Up   = pure . succ
-    update Down = pure . pred
-    view   n    = object 
+newtype Counter = Counter Int
+  deriving (Eq, Ord, Enum, Num)
+
+instance Widget Msg Counter where
+  update Up   = succ
+  update Down = pred
+  view (Counter n) = object 
         [ "down" := Down <$ recv_
         , "text" := send (show n)
         , "up"   := Up <$ recv_
         ]
-    runtime _ = error "no runtime needed"
 
 main :: IO ()
 main = main_ 3000
@@ -36,5 +38,5 @@ main_ i = do
 --  dataDir <- return "."
   scotty i $ do
     get "/" $ file $ dataDir ++ "/examples/UpDown.html"
-    middleware $ elmArchitecture example 0
+    middleware $ elmArchitecture $ Counter 0
             

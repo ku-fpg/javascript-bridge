@@ -4,6 +4,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE DefaultSignatures #-}
 
 module Network.JavaScript.ElmArchitecture where
 
@@ -19,13 +22,19 @@ import Network.JavaScript.Internal (AF(..),evalAF)
 import Network.JavaScript          (sendA, command, call, value, start, Application)
 import Data.Text(Text)
 
+-- Widgets can not have effects
+class Widget msg model | model -> msg where
+  update   :: msg    -> model -> model
+  view     :: model  -> Remote msg
 
-data ElmArchitecture effect msg model = ElmArchitecture
-  { update  :: msg -> model -> Update effect model
-  , view    :: model        -> Remote msg 
-  , runtime :: effect       -> IO (Event msg)
-  }
+  default update :: Applet msg model => msg -> model -> model    
+  update  msg model = fst $ runWriter $ applet msg model
 
+-- Applets can have external effect
+class Widget msg model => Applet msg model where
+  applet  :: msg -> model -> Writer (IO (Event msg)) model
+  applet msg model = pure $ update msg model
+  
 newtype View msg a = View (AF (Trigger msg) a)
   deriving (Functor,Applicative)
 
@@ -133,29 +142,29 @@ instance FromJSON WebEvent where
         <*> v .: "value"
 
 ------------------------------------------------------------------------------
-data RuntimeState msg model = RuntimeState
+data RuntimeState model = RuntimeState
   { theModel :: model
   , theMsgs  :: Event Value
   , theTick  :: Int
   }
 
-elmArchitecture :: forall effect msg model f . (Show effect, Show msg)
-                => ElmArchitecture effect msg model
-                -> model
+elmArchitecture :: forall msg model .
+                   (Widget msg model, Show msg)
+                => model
                 -> Application -> Application
-elmArchitecture ea m = start $ \ ev e -> do
+elmArchitecture  m = start $ \ ev e -> do
   print "elmArch"
-  let render :: RuntimeState msg model
+  let render :: RuntimeState model
              -> IO ()
       render state@RuntimeState{..} = do
-        let theView = view ea theModel
+        let theView = view theModel
         let s0 = 0
         let (json,_) = runState (sendRemote theView) 0
         print json
         sendA e $ command $ call "jsb.render" [value (0::Int),value json]
         wait state theView
 
-      wait :: RuntimeState msg model
+      wait :: RuntimeState model
            -> Remote msg
 	   -> IO ()
       wait state@RuntimeState{..} theView = do
@@ -169,8 +178,7 @@ elmArchitecture ea m = start $ \ ev e -> do
               Nothing -> wait state{theMsgs=theMsgs'} theView
               Just msg'' -> do
                 print msg''
-                let (theModel', effects) = runUpdate $ update ea msg'' theModel
-                print effects
+                let theModel' = update msg'' theModel
                 render $ RuntimeState { theModel = theModel'
                                       , theMsgs = theMsgs'
                                       , theTick = theTick + 1
