@@ -64,6 +64,9 @@ infix 0 :=
 object :: [Pair msg] -> Remote msg
 object = Object
 
+recv_ :: Remote ()
+recv_ = recv
+
 sendRemote :: Remote msg -> State Int Value
 sendRemote (Send a) = pure $ toJSON a
 sendRemote (RecvUnit) = toJSON <$> alloc 

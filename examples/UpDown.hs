@@ -21,9 +21,9 @@ example = ElmArchitecture{..}
     update Up   = pure . succ
     update Down = pure . pred
     view   n    = object 
-        [ "down" := (\()->Down) <$> recv
+        [ "down" := Down <$ recv_
         , "text" := send (show n)
-        , "up"   := (\()->Up) <$> recv
+        , "up"   := Up <$ recv_
         ]
     runtime _ = error "no runtime needed"
 
