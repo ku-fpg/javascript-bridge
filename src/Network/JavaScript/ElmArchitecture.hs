@@ -100,35 +100,6 @@ instance FromJSON WebEvent where
         <*> v .: "value"
 
 ------------------------------------------------------------------------------
--- Toy tester
-
-runElmArchitecture
-  :: ElmArchitecture () msg model
-  -> model
-  -> Thing msg
-runElmArchitecture elm@ElmArchitecture{..} m = 
-  Thing (view m) $ stepElmArchitecture elm m
-      
-stepElmArchitecture
-  :: ElmArchitecture () msg model
-  -> model
-  -> msg
-  -> Thing msg
-stepElmArchitecture elm@ElmArchitecture{..} m msg =
-  case runUpdate (update msg m) of
-    (m', _) -> runElmArchitecture elm m'
-
-data Thing msg = Thing (View msg Value) (msg -> Thing msg)
-
-step :: msg -> Thing msg -> Thing msg
-step msg (Thing _ k) = k msg
-
--- The key debugging step
-instance Show msg => Show (Thing msg) where
-  show (Thing doc _k) = show doc
-
-
-------------------------------------------------------------------------------
 data RuntimeState msg model = RuntimeState
   { theModel :: model
   , theMsgs  :: Event Value
