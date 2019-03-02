@@ -8,13 +8,16 @@
 module Network.JavaScript.ElmArchitecture where
 
 import Control.Applicative         ((<|>))
-import Data.Aeson                  (Value,toJSON,FromJSON(..),withObject,(.:), Result(..),fromJSON)
-import Control.Monad.Trans.State   (State,put,get,runState,execState)
+import Data.Aeson                  (Value,ToJSON,toJSON,FromJSON(..),withObject,(.:), Result(..),fromJSON,(.=))
+import Data.Maybe
+import qualified Data.Aeson as A
+import Control.Monad.Trans.State   (State,put,get,runState,evalState,execState)
 import Control.Monad.Trans.Writer  (Writer,runWriter,tell)
 
 import Network.JavaScript.Reactive (Event, popE)
 import Network.JavaScript.Internal (AF(..),evalAF)
 import Network.JavaScript          (sendA, command, call, value, start, Application)
+import Data.Text(Text)
 
 
 data ElmArchitecture effect msg model = ElmArchitecture
@@ -52,6 +55,62 @@ runView s0 (View m) = runState (evalAF f m) s0
 extractTrigger :: View msg a -> Int -> WebEvent -> Maybe msg
 extractTrigger (View m) s0 webEvent =
     snd $ execState (evalAF f m) (s0,Nothing)
+data Remote msg where
+  Send       :: ToJSON a => a -> Remote msg
+  RecvUnit   :: Remote ()
+  RecvDouble :: Remote Double
+  MapRemote  :: (a -> b) -> Remote a -> Remote b
+  Object     :: [Pair msg] -> Remote msg
+
+instance Functor Remote where
+  fmap = MapRemote
+
+send :: ToJSON a => a -> Remote msg
+send = Send
+
+class Recv msg where
+  recv :: Remote msg
+
+instance Recv () where
+  recv = RecvUnit
+
+instance Recv Double  where
+  recv = RecvDouble
+
+data Pair msg where
+  (:=) :: Text -> Remote msg -> Pair msg
+
+infix 0 :=
+
+object :: [Pair msg] -> Remote msg
+object = Object
+
+sendRemote :: Remote msg -> State Int Value
+sendRemote (Send a) = pure $ toJSON a
+sendRemote (RecvUnit) = toJSON <$> alloc 
+sendRemote (RecvDouble) = toJSON <$> alloc
+sendRemote (MapRemote _ r) = sendRemote r
+sendRemote (Object pairs) = A.object <$> sequenceA
+  [ (lbl .=) <$> sendRemote r
+  | lbl := r <- pairs
+  ]
+
+recvRemote :: Remote msg -> WebEvent -> State Int (Maybe msg)
+recvRemote (RecvUnit) we = do
+  i <- alloc
+  case we of
+    Click i' | i == i' -> pure (Just ())
+    _ -> pure Nothing
+recvRemote (RecvDouble) we = do
+  i <- alloc
+  case we of
+    Slide i' v | i == i' -> pure (Just v)
+    _ -> pure Nothing
+recvRemote (Send {}) _ = pure Nothing
+recvRemote (Object pairs) we = f <$> sequenceA
+    [ recvRemote r we
+    | _ := r <- pairs
+    ]
   where
     f :: Trigger msg a -> State (Int,Maybe msg) a
     f (Trigger msg) = do
@@ -69,6 +128,14 @@ extractTrigger (View m) s0 webEvent =
 
 instance Show a => Show (View msg a) where
   show = show . fst . runView 1
+    f xs = head $ filter isJust xs ++ [Nothing]
+recvRemote (MapRemote f r) ev = fmap f <$> recvRemote r ev
+
+alloc :: State Int Int
+alloc = do
+  s <- get
+  put (succ s)
+  return s
 
 newtype Update msg a = Update (AF (Effect msg) a)
   deriving (Functor,Applicative)
