@@ -35,14 +35,6 @@ class Widget msg model => Applet msg model where
   applet  :: msg -> model -> Writer (IO (Event msg)) model
   applet msg model = pure $ update msg model
   
-newtype View msg a = View (AF (Trigger msg) a)
-  deriving (Functor,Applicative)
-
-data Trigger msg a where
-  Trigger ::  msg  -> Trigger msg Value
-  SliderTrigger :: (Double -> msg) -> Trigger msg Value
-
-
 data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
