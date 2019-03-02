@@ -9,6 +9,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Network.JavaScript.ElmArchitecture where
 
@@ -25,20 +26,22 @@ import Network.JavaScript          (sendA, command, call, value, start, Applicat
 import Data.Text(Text)
 
 -- Widgets can not have effects
-class Widget msg model | model -> msg where
-  update   :: msg    -> model -> model
-  view     :: model  -> Remote msg
+class Widget model where
+  type Message model
+  update   :: (msg ~ Message model) => msg    -> model -> model
+  view     :: (msg ~ Message model) => model  -> Remote msg
 
-  default update :: Applet msg model => msg -> model -> model    
+  default update :: (Applet model, msg ~ Message model) => msg -> model -> model    
   update  msg model = fst $ runWriter $ applet msg model
 
-instance Widget msg model => Widget (OneOf msg) [model] where
+instance Widget model => Widget [model] where
+  type Message [model] = OneOf (Message model)
   update (OneOf n w) ws = take n ws ++ [update w (ws !! n)] ++ drop (n+1) ws
   view ws = arrayOf (map view ws)
 
 -- Applets can have external effect
-class Widget msg model => Applet msg model where
-  applet  :: msg -> model -> Writer (IO (Event msg)) model
+class Widget model => Applet model where
+  applet  :: (msg ~ Message model) => msg -> model -> Writer (IO (Event msg)) model
   applet msg model = pure $ update msg model
   
 data Remote msg where
@@ -166,7 +169,7 @@ data RuntimeState model = RuntimeState
   }
 
 elmArchitecture :: forall msg model .
-                   (Widget msg model, Show msg)
+                   (Widget model, msg ~ Message model, Show msg)
                 => model
                 -> Application -> Application
 elmArchitecture  m = start $ \ ev e -> do

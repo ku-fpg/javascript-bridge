@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Network.JavaScript.Widgets where
 
@@ -10,7 +11,8 @@ newtype Slider = Slider Double
 
 -- This is an example of the type being used for both
 -- the message and the state.
-instance Widget Slider Slider where
+instance Widget Slider where
+  type Message Slider = Slider
   update m _ = m
   view (Slider n) = object 
       [ "value"  := send n

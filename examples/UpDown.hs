@@ -1,6 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
+
 
 module Main where
 
@@ -20,7 +22,8 @@ data Msg = Up | Down
 newtype Counter = Counter Int
   deriving (Eq, Ord, Enum, Num)
 
-instance Widget Msg Counter where
+instance Widget Counter where
+  type Message Counter = Msg
   update Up   = succ
   update Down = pred
   view (Counter n) = object 
