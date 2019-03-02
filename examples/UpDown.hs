@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import Data.Aeson             
+-- import Data.Aeson             
 import Web.Scotty
 
 import Network.JavaScript.ElmArchitecture
@@ -20,10 +20,10 @@ example = ElmArchitecture{..}
   where
     update Up   = pure . succ
     update Down = pure . pred
-    view   n    = object <$> sequenceA
-        [ ("down" .=) <$> trigger Down
-        , ("text" .=) <$> pure (show n)
-        , ("up"   .=) <$> trigger Up
+    view   n    = object 
+        [ "down" := (\()->Down) <$> recv
+        , "text" := send (show n)
+        , "up"   := (\()->Up) <$> recv
         ]
     runtime _ = error "no runtime needed"
 

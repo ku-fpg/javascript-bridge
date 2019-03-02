@@ -2,7 +2,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import Data.Aeson             
 import Web.Scotty
 
 import Network.JavaScript.ElmArchitecture
@@ -18,10 +17,10 @@ example :: ElmArchitecture () Msg Double
 example = ElmArchitecture{..}
   where
     update (SlideTo v) _ = pure v
-    view   n    = object <$> sequenceA
-        [ ("text" .=)   <$> pure  n
-        , ("slider" .=) <$> slider SlideTo
-        ]
+    view   n    = object
+      [ "text"    := send n
+      , "slider"  := SlideTo <$> recv
+      ] 
     runtime _ = error "no runtime needed"
 
 main :: IO ()

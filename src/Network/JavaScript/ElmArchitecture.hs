@@ -22,7 +22,7 @@ import Data.Text(Text)
 
 data ElmArchitecture effect msg model = ElmArchitecture
   { update  :: msg -> model -> Update effect model
-  , view    :: model        -> View msg Value
+  , view    :: model        -> Remote msg 
   , runtime :: effect       -> IO (Event msg)
   }
 
@@ -33,28 +33,7 @@ data Trigger msg a where
   Trigger ::  msg  -> Trigger msg Value
   SliderTrigger :: (Double -> msg) -> Trigger msg Value
 
-trigger :: msg -> View msg Value
-trigger = View . PrimAF . Trigger
 
-slider :: (Double -> msg) -> View msg Value
-slider =  View . PrimAF . SliderTrigger
-
-runView :: Int -> View msg a -> (a,Int)
-runView s0 (View m) = runState (evalAF f m) s0
-  where
-    f :: Trigger msg a -> State Int a
-    f (Trigger{}) = do
-      s <- get
-      put (succ s)
-      return $ toJSON s
-    f (SliderTrigger{}) = do
-      s <- get
-      put (succ s)
-      return $ toJSON s
-
-extractTrigger :: View msg a -> Int -> WebEvent -> Maybe msg
-extractTrigger (View m) s0 webEvent =
-    snd $ execState (evalAF f m) (s0,Nothing)
 data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
@@ -112,22 +91,6 @@ recvRemote (Object pairs) we = f <$> sequenceA
     | _ := r <- pairs
     ]
   where
-    f :: Trigger msg a -> State (Int,Maybe msg) a
-    f (Trigger msg) = do
-      (s,i) <- get
-      put (succ s,case webEvent of
-                    Click n | s == n -> Just msg
-                    _ -> i)
-      return $ toJSON s
-    f (SliderTrigger k) = do
-      (s,i) <- get
-      put (succ s,case webEvent of
-                    Slide n v | s == n -> Just $ k v
-                    _ -> i)
-      return $ toJSON s
-
-instance Show a => Show (View msg a) where
-  show = show . fst . runView 1
     f xs = head $ filter isJust xs ++ [Nothing]
 recvRemote (MapRemote f r) ev = fmap f <$> recvRemote r ev
 
@@ -184,13 +147,13 @@ elmArchitecture ea m = start $ \ ev e -> do
       render state@RuntimeState{..} = do
         let theView = view ea theModel
         let s0 = 0
-        let (json,_) = runView 0 theView
+        let (json,_) = runState (sendRemote theView) 0
         print json
         sendA e $ command $ call "jsb.render" [value (0::Int),value json]
         wait state theView
 
       wait :: RuntimeState msg model
-           -> View msg Value
+           -> Remote msg
 	   -> IO ()
       wait state@RuntimeState{..} theView = do
         (msg,theMsgs') <- popE theMsgs
@@ -199,7 +162,7 @@ elmArchitecture ea m = start $ \ ev e -> do
           Error{} -> wait state{theMsgs=theMsgs'} theView
           Success msg' -> do
             print msg'
-            case extractTrigger theView 0 msg' of
+            case evalState (recvRemote theView msg') 0 of
               Nothing -> wait state{theMsgs=theMsgs'} theView
               Just msg'' -> do
                 print msg''
@@ -213,3 +176,4 @@ elmArchitecture ea m = start $ \ ev e -> do
                         , theMsgs = ev
                         , theTick = 0
                         }
+
