@@ -18,7 +18,7 @@ import Data.Aeson                  (Value,ToJSON,toJSON,FromJSON(..),withObject,
 import Data.Maybe
 import qualified Data.Aeson as A
 import Control.Monad.Trans.State   (State,put,get,runState,evalState,execState)
-import Control.Monad.Trans.Writer  (Writer,runWriter,tell)
+import Control.Monad.Trans.Writer  (Writer,runWriter,tell, mapWriter)
 
 import Network.JavaScript.Reactive (Event, popE)
 import Network.JavaScript.Internal (AF(..),evalAF)
@@ -44,6 +44,11 @@ class Widget model => Applet model where
   applet  :: (msg ~ Message model) => msg -> model -> Writer (IO (Event msg)) model
   applet msg model = pure $ update msg model
   
+instance Applet model => Applet [model] where
+  applet (OneOf n w) ws =
+      (\ w' -> take n ws ++ [w'] ++ drop (n+1) ws) <$>
+        mapWriter (\ (a,w) -> (a,fmap (fmap (OneOf n)) w)) (applet w (ws !! n))
+      
 data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
