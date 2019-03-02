@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -w #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -41,6 +42,7 @@ data Remote msg where
   RecvDouble :: Remote Double
   MapRemote  :: (a -> b) -> Remote a -> Remote b
   Object     :: [Pair msg] -> Remote msg
+  Array      :: [Remote msg] -> Remote msg  
 
 instance Functor Remote where
   fmap = MapRemote
@@ -65,6 +67,9 @@ infix 0 :=
 object :: [Pair msg] -> Remote msg
 object = Object
 
+array :: [Remote msg] -> Remote msg
+array = Array
+
 recv_ :: Remote ()
 recv_ = recv
 
@@ -77,6 +82,7 @@ sendRemote (Object pairs) = A.object <$> sequenceA
   [ (lbl .=) <$> sendRemote r
   | lbl := r <- pairs
   ]
+sendRemote (Array rs) = toJSON <$> sequenceA (sendRemote <$> rs)
 
 recvRemote :: Remote msg -> WebEvent -> State Int (Maybe msg)
 recvRemote (RecvUnit) we = do
@@ -93,6 +99,12 @@ recvRemote (Send {}) _ = pure Nothing
 recvRemote (Object pairs) we = f <$> sequenceA
     [ recvRemote r we
     | _ := r <- pairs
+    ]
+  where
+    f xs = head $ filter isJust xs ++ [Nothing]
+recvRemote (Array rs) we = f <$> sequenceA
+    [ recvRemote r we
+    | r <- rs
     ]
   where
     f xs = head $ filter isJust xs ++ [Nothing]
