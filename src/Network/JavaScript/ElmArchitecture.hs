@@ -87,6 +87,7 @@ recv_ :: Remote ()
 recv_ = recv
 
 data OneOf a = OneOf Int a
+  deriving Show
 
 arrayOf :: [Remote msg] -> Remote (OneOf msg)
 arrayOf rs = array
