@@ -9,12 +9,15 @@ import Network.JavaScript.ElmArchitecture
 newtype Slider = Slider Double
   deriving (Eq, Ord, Show)
 
--- This is an example of the type being used for both
--- the message and the state.
-instance Widget Slider where
-  type Message Slider = Slider
-  update m _ = m
-  view (Slider n) = object 
+instance Widget Double Double where
+  widget n = object 
       [ "value"  := send n
-      , "slider" := Slider <$> recv
+      , "event"  := recv
+      ]
+
+-- deriving via?
+instance Widget Slider Slider where
+  widget (Slider n) = object 
+      [ "value"  := send n
+      , "event"  := Slider <$> recv
       ]

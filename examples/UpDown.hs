@@ -20,16 +20,13 @@ data Msg = Up | Down
   deriving (Eq, Ord, Show)
 
 newtype Counter = Counter Int
-  deriving (Eq, Ord, Enum, Num)
+  deriving (Eq, Ord, Enum, Num, Show)
 
-instance Widget Counter where
-  type Message Counter = Msg
-  update Up   = succ
-  update Down = pred
-  view (Counter n) = object 
-        [ "down" := Down <$ recv_
+instance Widget Counter Counter where
+  widget (Counter n) = object 
+        [ "down" := Counter (n-1) <$ recv_
         , "text" := send (show n)
-        , "up"   := Up <$ recv_
+        , "up"   := Counter (n+1) <$ recv_
         ]
 
 main :: IO ()

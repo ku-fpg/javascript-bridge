@@ -47,7 +47,7 @@
           el.querySelector('input.slider').value = o.value;
           el.querySelector('p.the-text').textContent = o.value;
           el.querySelector('progress.progress').setAttribute('value',o.value);
-	  el.querySelector('input.slider').setAttribute("data-event-id",o.slider);
+	  el.querySelector('input.slider').setAttribute("data-event-id",o.event);
       }
       jsb.renderList = (el,o,f) => {
 	  var q = ':scope>ul>li'; // Does not work in IE/Edge

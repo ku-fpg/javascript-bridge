@@ -10,6 +10,7 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Network.JavaScript.ElmArchitecture where
 
@@ -25,30 +26,19 @@ import Network.JavaScript.Internal (AF(..),evalAF)
 import Network.JavaScript          (sendA, command, call, value, start, Application)
 import Data.Text(Text)
 
--- Widgets can not have effects
-class Widget model where
-  type Message model
-  update   :: (msg ~ Message model) => msg    -> model -> model
-  view     :: (msg ~ Message model) => model  -> Remote msg
+class Widget model msg where
+  widget :: model -> Remote msg
 
-  default update :: (Applet model, msg ~ Message model) => msg -> model -> model    
-  update  msg model = fst $ runWriter $ applet msg model
+-- We provide the more general tag-based message, as well as the
+-- more uniform model to model version.
+instance Widget model msg => Widget [model] (OneOf msg) where
+  widget ws = arrayOf (map widget ws)
 
-instance Widget model => Widget [model] where
-  type Message [model] = OneOf (Message model)
-  update (OneOf n w) ws = take n ws ++ [update w (ws !! n)] ++ drop (n+1) ws
-  view ws = arrayOf (map view ws)
+instance Widget model model => Widget [model] [model] where
+  widget ws = flip updateOneOf ws <$> widget ws
 
--- Applets can have external effect
-class Widget model => Applet model where
-  applet  :: (msg ~ Message model) => msg -> model -> Writer (IO (Event msg)) model
-  applet msg model = pure $ update msg model
-  
-instance Applet model => Applet [model] where
-  applet (OneOf n w) ws =
-      (\ w' -> take n ws ++ [w'] ++ drop (n+1) ws) <$>
-        mapWriter (\ (a,w) -> (a,fmap (fmap (OneOf n)) w)) (applet w (ws !! n))
-      
+updateOneOf :: OneOf model -> [model] -> [model]
+updateOneOf (OneOf n w) ws = take n ws ++ [w] ++ drop (n+1) ws
 data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
@@ -138,18 +128,6 @@ alloc = do
   put (succ s)
   return s
 
-newtype Update msg a = Update (AF (Effect msg) a)
-  deriving (Functor,Applicative)
-
-data Effect msg a where
-  Effect :: msg -> Effect msg ()
-
-runUpdate :: Update msg a -> (a,[msg])
-runUpdate (Update m) = runWriter (evalAF f m)
-  where
-    f :: Effect msg a -> Writer [msg] a
-    f (Effect msg) = tell [msg]
-
 ------------------------------------------------------------------------------
 
 data WebEvent
@@ -174,8 +152,8 @@ data RuntimeState model = RuntimeState
   , theTick  :: Int
   }
 
-elmArchitecture :: forall msg model .
-                   (Widget model, msg ~ Message model, Show msg)
+elmArchitecture :: forall model .
+                   (Show model, Widget model model)
                 => model
                 -> Application -> Application
 elmArchitecture  m = start $ \ ev e -> do
@@ -183,7 +161,8 @@ elmArchitecture  m = start $ \ ev e -> do
   let render :: RuntimeState model
              -> IO ()
       render state@RuntimeState{..} = do
-        let theView = view theModel
+        print theModel
+        let theView = widget @model @model theModel
         let s0 = 0
         let (json,_) = runState (sendRemote theView) 0
         print json
@@ -191,20 +170,18 @@ elmArchitecture  m = start $ \ ev e -> do
         wait state theView
 
       wait :: RuntimeState model
-           -> Remote msg
+           -> Remote model
 	   -> IO ()
       wait state@RuntimeState{..} theView = do
         (msg,theMsgs') <- popE theMsgs
         print msg
-        case fromJSON msg of
+        case fromJSON msg :: Result WebEvent of
           Error{} -> wait state{theMsgs=theMsgs'} theView
           Success msg' -> do
             print msg'
             case evalState (recvRemote theView msg') 0 of
               Nothing -> wait state{theMsgs=theMsgs'} theView
-              Just msg'' -> do
-                print msg''
-                let theModel' = update msg'' theModel
+              Just theModel' -> 
                 render $ RuntimeState { theModel = theModel'
                                       , theMsgs = theMsgs'
                                       , theTick = theTick + 1
