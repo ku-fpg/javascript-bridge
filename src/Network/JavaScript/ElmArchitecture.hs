@@ -65,7 +65,7 @@ instance Recv Double  where
 data Pair msg where
   (:=) :: Text -> Remote msg -> Pair msg
 
-infix 0 :=
+infixr 0 :=
 
 object :: [Pair msg] -> Remote msg
 object = Object
@@ -73,8 +73,8 @@ object = Object
 array :: [Remote msg] -> Remote msg
 array = Array
 
-recv_ :: Remote ()
-recv_ = recv
+wait :: a -> Remote a
+wait a = fmap (\ () -> a) recv
 
 data OneOf a = OneOf Int a
   deriving Show
