@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.9.1/underscore-min.js"></script>
+    <title>Sliders Example</title>
+  </head>
+  <body>
+    <script type="text/template" id="text-template">
+      <div class="text">
+        <input type="text" id="name" name="name" class="text">
+        <p class="the-text">The Text</p>
+      <div>
+    </script>
+    <div id="target"></div>
+    <script>
+      window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
+      jsb.ws.onmessage = (evt) => eval(evt.data);
+      jsb.debug = true;
+      jsb.tick = 0;
+      jsb.render = (t,o) => {
+          jsb.tick = t;
+          jsb.view = o;
+          console.log(o);
+          jsb.renderText(document.querySelector('#target'),o);
+      }
+      jsb.renderText = (el,o) => {
+          var q = 'div.text';
+	  var ch = el.querySelectorAll(q);
+	  if (ch.length == 0) {
+	      // Only render HTML the first time around
+	      var t = document.querySelector('#text-template').innerHTML;
+	      el.innerHTML = _.template(t)(o);
+              el.querySelector('input.text').oninput = function(e) {
+		  jsb.event({entry:parseInt(this.getAttribute("data-event-id")),
+			     value:this.value,
+			     tick:jsb.tick})
+	      }
+	  }
+//          el.querySelector('input.slider').value = o.value;
+          el.querySelector('p.the-text').textContent = o.value;
+//          el.querySelector('progress.progress').setAttribute('value',o.value);
+	  el.querySelector('input.text').setAttribute("data-event-id",o.event);
+	  console.log("o",o)
+      }
+    </script>
+  </body>
+</html>

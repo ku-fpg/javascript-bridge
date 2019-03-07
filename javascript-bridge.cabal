@@ -99,4 +99,15 @@ executable jsb-elm-sliders
   hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
-  
+
+executable jsb-elm-text
+  main-is:             Text.hs
+  other-modules:       Paths_javascript_bridge
+  build-depends:       base                 >= 4.9 && < 4.13
+                     , javascript-bridge
+                     , text                 >= 1.2     && < 1.3
+                     , scotty               == 0.11.*
+  hs-source-dirs:      examples
+  default-language:    Haskell2010
+  ghc-options:         -threaded -Wall
+    
