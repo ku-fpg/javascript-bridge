@@ -14,11 +14,6 @@ import Network.JavaScript.ElmArchitecture
 import Paths_javascript_bridge
 
 -- The Up/Down example of the elm architecture
-
--- Example up/down
-data Msg = Up | Down
-  deriving (Eq, Ord, Show)
-
 newtype Counter = Counter Int
   deriving (Eq, Ord, Enum, Num, Show)
 
