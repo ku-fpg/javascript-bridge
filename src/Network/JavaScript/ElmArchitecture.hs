@@ -43,6 +43,7 @@ data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
   RecvDouble :: Remote Double
+  RecvText   :: Remote Text
   MapRemote  :: (a -> b) -> Remote a -> Remote b
   Object     :: [Pair msg] -> Remote msg
   Array      :: [Remote msg] -> Remote msg  
@@ -59,8 +60,11 @@ class Recv msg where
 instance Recv () where
   recv = RecvUnit
 
-instance Recv Double  where
+instance Recv Double where
   recv = RecvDouble
+
+instance Recv Text where
+  recv = RecvText
 
 data Pair msg where
   (:=) :: Text -> Remote msg -> Pair msg
@@ -90,6 +94,7 @@ sendRemote :: Remote msg -> State Int Value
 sendRemote (Send a) = pure $ toJSON a
 sendRemote (RecvUnit) = toJSON <$> alloc 
 sendRemote (RecvDouble) = toJSON <$> alloc
+sendRemote (RecvText) = toJSON <$> alloc
 sendRemote (MapRemote _ r) = sendRemote r
 sendRemote (Object pairs) = A.object <$> sequenceA
   [ (lbl .=) <$> sendRemote r
@@ -107,6 +112,11 @@ recvRemote (RecvDouble) we = do
   i <- alloc
   case we of
     Slide i' v | i == i' -> pure (Just v)
+    _ -> pure Nothing
+recvRemote (RecvText) we = do
+  i <- alloc
+  case we of
+    Entry i' v | i == i' -> pure (Just v)
     _ -> pure Nothing
 recvRemote (Send {}) _ = pure Nothing
 recvRemote (Object pairs) we = f <$> sequenceA
@@ -134,16 +144,21 @@ alloc = do
 data WebEvent
   = Click Int
   | Slide Int Double
+  | Entry Int Text
   deriving Show
 
 instance FromJSON WebEvent where
   parseJSON o = parseClick o <|>
-                parseSlide o
+                parseSlide o <|>
+                parseEntry o
    where
      parseClick = withObject "Click" $ \v -> Click
         <$> v .: "click"
      parseSlide = withObject "Slide" $ \v -> Slide
         <$> v .: "slide"
+        <*> v .: "value"
+     parseEntry = withObject "Entry" $ \v -> Entry
+        <$> v .: "entry"
         <*> v .: "value"
 
 ------------------------------------------------------------------------------
@@ -166,7 +181,7 @@ elmArchitecture  m = start $ \ ev e -> do
         let theView = widget @model @model theModel
         let s0 = 0
         let (json,_) = runState (sendRemote theView) 0
-        print json
+        print ("json",json)
         sendA e $ command $ call "jsb.render" [value (0::Int),value json]
         wait state theView
 
@@ -175,13 +190,18 @@ elmArchitecture  m = start $ \ ev e -> do
 	   -> IO ()
       wait state@RuntimeState{..} theView = do
         (msg,theMsgs') <- popE theMsgs
+        print "waiting for event"
         print msg
         case fromJSON msg :: Result WebEvent of
-          Error{} -> wait state{theMsgs=theMsgs'} theView
+          Error msg -> do
+            print("Error fromJSON msg",msg)
+            wait state{theMsgs=theMsgs'} theView
           Success msg' -> do
-            print msg'
+            print ("got msg",msg')
             case evalState (recvRemote theView msg') 0 of
-              Nothing -> wait state{theMsgs=theMsgs'} theView
+              Nothing -> do
+                print "no match found for event"
+                wait state{theMsgs=theMsgs'} theView
               Just theModel' -> 
                 render $ RuntimeState { theModel = theModel'
                                       , theMsgs = theMsgs'
@@ -196,6 +216,12 @@ elmArchitecture  m = start $ \ ev e -> do
 ------------------------------------------------------------------------------
 
 instance Widget Double Double where
+  widget n = object 
+      [ "value"  := send n
+      , "event"  := recv
+      ]
+
+instance Widget Text Text where
   widget n = object 
       [ "value"  := send n
       , "event"  := recv
