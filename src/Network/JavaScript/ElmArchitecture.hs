@@ -65,6 +65,7 @@ instance Recv Double  where
 data Pair msg where
   (:=) :: Text -> Remote msg -> Pair msg
 
+-- same as ($)
 infixr 0 :=
 
 object :: [Pair msg] -> Remote msg
@@ -190,4 +191,13 @@ elmArchitecture  m = start $ \ ev e -> do
                         , theMsgs = ev
                         , theTick = 0
                         }
+
+
+------------------------------------------------------------------------------
+
+instance Widget Double Double where
+  widget n = object 
+      [ "value"  := send n
+      , "event"  := recv
+      ]
 
