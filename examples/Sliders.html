@@ -18,8 +18,10 @@
       <ul>
         <% _.each(list, (i) => { %><li></li><% }); %>				  
       </ul>
-    </script>    
+    </script>
+    <HR>
     <div id="target"></div>
+    <HR>
     <script>
       window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
       jsb.ws.onmessage = (evt) => eval(evt.data);
@@ -29,9 +31,36 @@
           jsb.tick = t;
           jsb.view = o;
           console.log(o);
-          jsb.renderList(document.querySelector('#target'),o,jsb.renderSlider);
+	  jsb.renders.generic(document.querySelector('#target'),o);
       }
-      jsb.renderSlider = (el,o) => {
+      jsb.renders = {};
+      jsb.renders.Array = (el,o) => {
+	  console.log("Array",el,o);
+	  var q = ':scope>ul>li'; // Does not work in IE/Edge
+	  var ch = el.querySelectorAll(q);
+	  if (ch.length != o.length) {
+	      // No need to do this if the list size is the same
+	      var t = document.querySelector('#list-template').innerHTML;
+	      el.innerHTML = _.template(t)({list:o});
+	      ch = el.querySelectorAll(q)
+	  }
+	  _.each(ch,(el,i) => { jsb.renders.generic(el,o[i]) })
+      }
+      jsb.renders.Double = (el,o) => {
+	  el.innerHTML = "<b>Double</b>"	  
+      }
+      jsb.renders.generic = (el,o) => {
+	  console.log("generic",el,o);
+	  if (o instanceof Array) {
+	      return jsb.renders.Array(el,o);
+	  }
+	  if (o.type) {
+	      return jsb.renders[o.type](el,o);
+	  }
+	  el.innerHTML = "<b>render failure</b>"
+	  return;
+      }
+      jsb.renders.Double = (el,o) => {
           var q = 'div.slider';
 	  var ch = el.querySelectorAll(q);
 	  if (ch.length == 0) {
@@ -48,17 +77,6 @@
           el.querySelector('p.the-text').textContent = o.value;
           el.querySelector('progress.progress').setAttribute('value',o.value);
 	  el.querySelector('input.slider').setAttribute("data-event-id",o.event);
-      }
-      jsb.renderList = (el,o,f) => {
-	  var q = ':scope>ul>li'; // Does not work in IE/Edge
-	  var ch = el.querySelectorAll(q);
-	  if (ch.length != o.length) {
-	      // No need to do this if the list size is the same
-	      var t = document.querySelector('#list-template').innerHTML;
-	      document.querySelector('#target').innerHTML = _.template(t)({list:o});
-	      ch = el.querySelectorAll(q)
-	  }
-	  _.each(ch,(el,i) => { f(el,o[i]) })
       }
     </script>
   </body>
