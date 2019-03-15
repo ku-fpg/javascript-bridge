@@ -44,6 +44,7 @@ data Remote msg where
   RecvUnit   :: Remote ()
   RecvDouble :: Remote Double
   RecvText   :: Remote Text
+  RecvBool   :: Remote Bool
   MapRemote  :: (a -> b) -> Remote a -> Remote b
   Object     :: [Pair msg] -> Remote msg
   Array      :: [Remote msg] -> Remote msg  
@@ -65,6 +66,9 @@ instance Recv Double where
 
 instance Recv Text where
   recv = RecvText
+
+instance Recv Bool where
+  recv = RecvBool
 
 data Pair msg where
   (:=) :: Text -> Remote msg -> Pair msg
@@ -95,6 +99,7 @@ sendRemote (Send a) = pure $ toJSON a
 sendRemote (RecvUnit) = toJSON <$> alloc 
 sendRemote (RecvDouble) = toJSON <$> alloc
 sendRemote (RecvText) = toJSON <$> alloc
+sendRemote (RecvBool) = toJSON <$> alloc
 sendRemote (MapRemote _ r) = sendRemote r
 sendRemote (Object pairs) = A.object <$> sequenceA
   [ (lbl .=) <$> sendRemote r
@@ -117,6 +122,11 @@ recvRemote (RecvText) we = do
   i <- alloc
   case we of
     Entry i' v | i == i' -> pure (Just v)
+    _ -> pure Nothing
+recvRemote (RecvBool) we = do
+  i <- alloc
+  case we of
+    Toggle i' v | i == i' -> pure (Just v)
     _ -> pure Nothing
 recvRemote (Send {}) _ = pure Nothing
 recvRemote (Object pairs) we = f <$> sequenceA
@@ -145,12 +155,14 @@ data WebEvent
   = Click Int
   | Slide Int Double
   | Entry Int Text
+  | Toggle Int Bool
   deriving Show
 
 instance FromJSON WebEvent where
   parseJSON o = parseClick o <|>
                 parseSlide o <|>
-                parseEntry o
+                parseEntry o <|>
+                parseToggle o
    where
      parseClick = withObject "Click" $ \v -> Click
         <$> v .: "click"
@@ -158,6 +170,9 @@ instance FromJSON WebEvent where
         <$> v .: "slide"
         <*> v .: "value"
      parseEntry = withObject "Entry" $ \v -> Entry
+        <$> v .: "entry"
+        <*> v .: "value"
+     parseToggle = withObject "Toggle" $ \v -> Toggle
         <$> v .: "entry"
         <*> v .: "value"
 
