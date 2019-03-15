@@ -229,16 +229,29 @@ elmArchitecture  m = start $ \ ev e -> do
 
 
 ------------------------------------------------------------------------------
+-- Primitive widgets
+
+tag :: Text -> Remote msg
+tag txt = send txt
 
 instance Widget Double Double where
   widget n = object 
-      [ "value"  := send n
-      , "event"  := recv
+      [ "type"   := tag "Double"  -- by convension
+      , "value"  := send n        -- the outgoing value
+      , "event"  := recv          -- the event reply
       ]
 
 instance Widget Text Text where
-  widget n = object 
-      [ "value"  := send n
+  widget n = object
+      [ "type"   := tag "Text"
+      , "value"  := send n
       , "event"  := recv
-      ]
+      ] 
+
+instance Widget Bool Bool where
+  widget n = object
+      [ "type"   := tag "Bool"
+      , "value"  := send n
+      , "event"  := recv
+      ] 
 
