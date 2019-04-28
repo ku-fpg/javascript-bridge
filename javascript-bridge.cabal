@@ -15,12 +15,13 @@ tested-with:         GHC == 8.0.2
                    , GHC == 8.2.2
                    , GHC == 8.4.4
                    , GHC == 8.6.4
+                   , GHC == 8.8.1
 
 data-files:
   examples/UpDown.html
   examples/Slider.html
   examples/Sliders.html
-           
+
 source-repository head
   type:                git
   location:            https://github.com/ku-fpg/javascript-bridge
@@ -33,7 +34,7 @@ library
                        Network.JavaScript.Reactive,
                        Network.JavaScript.Services,
                        Network.JavaScript.Widgets
-                        
+
   -- other-modules:
   -- other-extensions:
   build-depends:       base                 >= 4.9     && < 4.13
@@ -110,4 +111,4 @@ executable jsb-elm-text
   hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
-    
+
