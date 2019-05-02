@@ -37,7 +37,7 @@ library
 
   -- other-modules:
   -- other-extensions:
-  build-depends:       base                 >= 4.9     && < 4.13
+  build-depends:       base                 >= 4.9     && < 4.14
                      , binary               >= 0.8     && < 0.9
                      , aeson                >= 1.0     && < 1.5
                      , containers           >= 0.5     && < 0.7
@@ -57,7 +57,7 @@ library
 test-suite javascript-bridge-test
   type:       exitcode-stdio-1.0
   main-is:             Main.hs
-  build-depends:       base                 >= 4.9 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.14
                      , aeson                >= 1.0 && < 1.5
                      , javascript-bridge
                      , scotty               == 0.11.*
@@ -72,7 +72,7 @@ test-suite javascript-bridge-test
 executable jsb-elm-up-down
   main-is:             UpDown.hs
   other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.14
                      , aeson                >= 1.0 && < 1.5
                      , javascript-bridge
                      , scotty               == 0.11.*
@@ -83,7 +83,7 @@ executable jsb-elm-up-down
 executable jsb-elm-slider
   main-is:             Slider.hs
   other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.14
                      , aeson                >= 1.0 && < 1.5
                      , javascript-bridge
                      , scotty               == 0.11.*
@@ -94,7 +94,7 @@ executable jsb-elm-slider
 executable jsb-elm-sliders
   main-is:             Sliders.hs
   other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.14
                      , javascript-bridge
                      , scotty               == 0.11.*
   hs-source-dirs:      examples
@@ -104,7 +104,7 @@ executable jsb-elm-sliders
 executable jsb-elm-text
   main-is:             Text.hs
   other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.13
+  build-depends:       base                 >= 4.9 && < 4.14
                      , javascript-bridge
                      , text                 >= 1.2     && < 1.3
                      , scotty               == 0.11.*
