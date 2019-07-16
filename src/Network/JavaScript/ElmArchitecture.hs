@@ -234,24 +234,20 @@ elmArchitecture  m = start $ \ ev e -> do
 tag :: Text -> Remote msg
 tag txt = send txt
 
+primitive :: (ToJSON m, Recv m) => Text -> m -> Remote m
+primitive txt n = object 
+      [ "type"   := tag txt  -- by convension
+      , "value"  := send n   -- the outgoing value
+      , "event"  := recv     -- the event reply
+      ]  
+
 instance Widget Double Double where
-  widget n = object 
-      [ "type"   := tag "Double"  -- by convension
-      , "value"  := send n        -- the outgoing value
-      , "event"  := recv          -- the event reply
-      ]
+  widget = primitive "Double"
 
 instance Widget Text Text where
-  widget n = object
-      [ "type"   := tag "Text"
-      , "value"  := send n
-      , "event"  := recv
-      ] 
+  widget = primitive "Text"
 
 instance Widget Bool Bool where
-  widget n = object
-      [ "type"   := tag "Bool"
-      , "value"  := send n
-      , "event"  := recv
-      ] 
+  widget = primitive "Bool"  
+
 
