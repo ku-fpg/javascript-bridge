@@ -6,7 +6,9 @@ module Network.JavaScript.Services
   ( -- * Web Services
     Engine(..)
   , start
+  , Event
   , addListener
+  , listen
   , Application
   ) where
 
@@ -27,7 +29,7 @@ import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
 
-import Network.JavaScript.Reactive(Event, eventIO, forkE, ThreadId)
+import Network.JavaScript.Reactive(Event, eventIO, forkE, waitE, ThreadId)
 
 -- | This accepts WebSocket requests.
 --
@@ -123,6 +125,14 @@ bootstrap =   LT.unlines
 --   values to this listener. Any valid JSON value can be sent.
 addListener :: Event Value -> (Value -> IO ()) -> IO ThreadId
 addListener events k = forkE k events
+
+-- | listen for an event. There may be more after, but only
+--   on the returned Event, not on the original event.
+--
+--   From javascript, you can call event(..) to send
+--   values to this listener. Any valid JSON value can be sent.
+listen :: Event Value -> IO (Value, Event Value)
+listen = waitE
 
 ------------------------------------------------------------------------------
 

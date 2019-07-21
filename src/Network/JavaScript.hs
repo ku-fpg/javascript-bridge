@@ -32,6 +32,7 @@ module Network.JavaScript
     -- * Events
   , JavaScriptException(..)
   , addListener
+  , listen
   , Event
   -- * Web services
   , start

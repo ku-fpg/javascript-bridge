@@ -21,7 +21,7 @@ import qualified Data.Aeson as A
 import Control.Monad.Trans.State   (State,put,get,runState,evalState,execState)
 import Control.Monad.Trans.Writer  (Writer,runWriter,tell, mapWriter)
 
-import Network.JavaScript.Reactive (Event, popE)
+import Network.JavaScript.Services (Event, listen)
 import Network.JavaScript.Internal (AF(..),evalAF)
 import Network.JavaScript          (sendA, command, call, value, start, Application)
 import Data.Text(Text)
@@ -204,7 +204,7 @@ elmArchitecture  m = start $ \ ev e -> do
            -> Remote model
 	   -> IO ()
       wait state@RuntimeState{..} theView = do
-        (msg,theMsgs') <- popE theMsgs
+        (msg,theMsgs') <- listen theMsgs
         print "waiting for event"
         print msg
         case fromJSON msg :: Result WebEvent of
