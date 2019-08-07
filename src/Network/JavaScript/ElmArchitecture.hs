@@ -26,19 +26,20 @@ import Network.JavaScript.Internal (AF(..),evalAF)
 import Network.JavaScript          (sendA, command, call, value, start, Application)
 import Data.Text(Text)
 
-class Widget model msg where
-  widget :: model -> Remote msg
+class Widget model where
+  widget :: model -> Remote model
 
 -- We provide the more general tag-based message, as well as the
 -- more uniform model to model version.
-instance Widget model msg => Widget [model] (OneOf msg) where
-  widget ws = arrayOf (map widget ws)
+widgetOneOf :: Widget model => [model] -> Remote (OneOf model)
+widgetOneOf = arrayOf . map widget
 
-instance Widget model model => Widget [model] [model] where
-  widget ws = flip updateOneOf ws <$> widget ws
+instance Widget model => Widget [model] where
+  widget ws = flip updateOneOf ws <$> widgetOneOf ws
 
 updateOneOf :: OneOf model -> [model] -> [model]
 updateOneOf (OneOf n w) ws = take n ws ++ [w] ++ drop (n+1) ws
+
 data Remote msg where
   Send       :: ToJSON a => a -> Remote msg
   RecvUnit   :: Remote ()
@@ -184,7 +185,7 @@ data RuntimeState model = RuntimeState
   }
 
 elmArchitecture :: forall model .
-                   (Show model, Widget model model)
+                   (Show model, Widget model)
                 => model
                 -> Application -> Application
 elmArchitecture  m = start $ \ ev e -> do
@@ -193,7 +194,7 @@ elmArchitecture  m = start $ \ ev e -> do
              -> IO ()
       render state@RuntimeState{..} = do
         print theModel
-        let theView = widget @model @model theModel
+        let theView = widget @model theModel
         let s0 = 0
         let (json,_) = runState (sendRemote theView) 0
         print ("json",json)
@@ -241,13 +242,13 @@ primitive txt n = object
       , "event"  := recv     -- the event reply
       ]  
 
-instance Widget Double Double where
+instance Widget Double where
   widget = primitive "Double"
 
-instance Widget Text Text where
+instance Widget Text where
   widget = primitive "Text"
 
-instance Widget Bool Bool where
+instance Widget Bool where
   widget = primitive "Bool"  
 
 

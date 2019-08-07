@@ -7,6 +7,6 @@ import Network.JavaScript.ElmArchitecture
 newtype Slider = Slider Double
   deriving (Eq, Ord, Show)
 
-instance Widget Slider Slider where
+instance Widget Slider where
   widget (Slider n) = Slider <$> widget n
 

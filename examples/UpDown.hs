@@ -17,7 +17,7 @@ import Paths_javascript_bridge
 newtype Counter = Counter Int
   deriving (Eq, Ord, Enum, Num, Show)
 
-instance Widget Counter Counter where
+instance Widget Counter where
   widget (Counter n) = object 
         [ "down" := wait $ Counter (n-1)
         , "text" := send (show n)
