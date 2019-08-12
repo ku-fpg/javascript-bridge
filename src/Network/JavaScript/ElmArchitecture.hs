@@ -71,11 +71,12 @@ instance Recv Text where
 instance Recv Bool where
   recv = RecvBool
 
-data Pair msg where
-  (:=) :: Text -> Remote msg -> Pair msg
+type Pair msg = (Text,Remote msg)
+
+--data Pair msg where
+--  (:=) :: Text -> Remote msg -> Pair msg
 
 -- same as ($)
-infixr 0 :=
 
 object :: [Pair msg] -> Remote msg
 object = Object
@@ -104,7 +105,7 @@ sendRemote (RecvBool) = toJSON <$> alloc
 sendRemote (MapRemote _ r) = sendRemote r
 sendRemote (Object pairs) = A.object <$> sequenceA
   [ (lbl .=) <$> sendRemote r
-  | lbl := r <- pairs
+  | (lbl,r) <- pairs
   ]
 sendRemote (Array rs) = toJSON <$> sequenceA (sendRemote <$> rs)
 
@@ -132,7 +133,7 @@ recvRemote (RecvBool) we = do
 recvRemote (Send {}) _ = pure Nothing
 recvRemote (Object pairs) we = f <$> sequenceA
     [ recvRemote r we
-    | _ := r <- pairs
+    | (_,r) <- pairs
     ]
   where
     f xs = head $ filter isJust xs ++ [Nothing]
@@ -237,9 +238,9 @@ tag txt = send txt
 
 primitive :: (ToJSON m, Recv m) => Text -> m -> Remote m
 primitive txt n = object 
-      [ "type"   := tag txt  -- by convension
-      , "value"  := send n   -- the outgoing value
-      , "event"  := recv     -- the event reply
+      [ ("type",  tag txt)  -- by convension
+      , ("value", send n)   -- the outgoing value
+      , ("event", recv)     -- the event reply
       ]  
 
 instance Widget Double where

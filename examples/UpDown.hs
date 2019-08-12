@@ -19,9 +19,9 @@ newtype Counter = Counter Int
 
 instance Widget Counter where
   widget (Counter n) = object 
-        [ "down" := wait $ Counter (n-1)
-        , "text" := send (show n)
-        , "up"   := wait $ Counter (n+1)
+        [ ("down" , wait $ Counter (n-1))
+        , ("text" , send (show n))
+        , ("up"   , wait $ Counter (n+1))
         ]
 
 main :: IO ()
