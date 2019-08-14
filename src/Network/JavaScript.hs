@@ -29,6 +29,8 @@ module Network.JavaScript
   , var
   , value
   , call
+  , number
+  , string
     -- * Events
   , JavaScriptException(..)
   , addListener
@@ -64,7 +66,6 @@ import qualified Data.IntMap.Strict as IM
 
 
 import Network.JavaScript.Internal
-import Network.JavaScript.Reactive
 import Network.JavaScript.Services
 
 ------------------------------------------------------------------------------
@@ -308,6 +309,14 @@ localize = procedure . var
 -- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
 value :: ToJSON v => v -> Text
 value = decodeUtf8 . encode
+
+-- | Generate JavaScript number
+number :: Double -> Text
+number = value
+
+-- | Generate (quoted) JavaScript string
+string :: Text -> Text
+string = value
 
 -- | generate a function call
 call :: Text -> [Text] -> Text
