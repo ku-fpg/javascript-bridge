@@ -33,7 +33,7 @@ module Network.JavaScript
   , JavaScriptException(..)
   , addListener
   , listen
-  , Event
+  , EventChan(..)
   -- * Web services
   , start
   , Engine

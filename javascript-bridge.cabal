@@ -28,12 +28,9 @@ source-repository head
 
 library
   exposed-modules:     Network.JavaScript,
-                       Network.JavaScript.ElmArchitecture,
-                       Network.JavaScript.Future,
                        Network.JavaScript.Internal,
                        Network.JavaScript.Reactive,
-                       Network.JavaScript.Services,
-                       Network.JavaScript.Widgets
+                       Network.JavaScript.Services
 
   -- other-modules:
   -- other-extensions:
@@ -45,6 +42,7 @@ library
                      , scientific           >= 0.3.4.9 && < 0.4
                      , stm                  >= 2.4     && < 2.6
                      , text                 >= 1.2     && < 1.3
+                     , time                 >= 1.6     && < 1.10                     
                      , transformers         >= 0.4     && < 0.6
                      , unordered-containers >= 0.2.7   && < 0.3
                      , wai                  >= 3.2     && < 3.3
@@ -66,49 +64,6 @@ test-suite javascript-bridge-test
                      , text                 >= 1.2 && < 1.3
                      , time                 >= 1.6 && < 1.10
   hs-source-dirs:      test
-  default-language:    Haskell2010
-  ghc-options:         -threaded -Wall
-
-executable jsb-elm-up-down
-  main-is:             UpDown.hs
-  other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.14
-                     , aeson                >= 1.0 && < 1.5
-                     , javascript-bridge
-                     , scotty               == 0.11.*
-  hs-source-dirs:      examples
-  default-language:    Haskell2010
-  ghc-options:         -threaded -Wall
-
-executable jsb-elm-slider
-  main-is:             Slider.hs
-  other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.14
-                     , aeson                >= 1.0 && < 1.5
-                     , javascript-bridge
-                     , scotty               == 0.11.*
-  hs-source-dirs:      examples
-  default-language:    Haskell2010
-  ghc-options:         -threaded -Wall
-
-executable jsb-elm-sliders
-  main-is:             Sliders.hs
-  other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.14
-                     , javascript-bridge
-                     , scotty               == 0.11.*
-  hs-source-dirs:      examples
-  default-language:    Haskell2010
-  ghc-options:         -threaded -Wall
-
-executable jsb-elm-text
-  main-is:             Text.hs
-  other-modules:       Paths_javascript_bridge
-  build-depends:       base                 >= 4.9 && < 4.14
-                     , javascript-bridge
-                     , text                 >= 1.2     && < 1.3
-                     , scotty               == 0.11.*
-  hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
 

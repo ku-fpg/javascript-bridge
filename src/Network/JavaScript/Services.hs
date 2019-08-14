@@ -6,30 +6,25 @@ module Network.JavaScript.Services
   ( -- * Web Services
     Engine(..)
   , start
-  , Event
+  , EventChan(..)
   , addListener
   , listen
   , Application
   ) where
 
-import Control.Applicative((<|>),liftA2)
-import Control.Exception(Exception)
-import Control.Exception as Exception
-import Data.Monoid ((<>))
+import Control.Applicative((<|>))
 import qualified Data.Text.Lazy as LT
+import Data.Time.Clock
 import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
 import qualified Network.WebSockets as WS
-import Control.Monad.Trans.State.Strict
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, ThreadId)
 import Control.Exception (try, SomeException)
 import Control.Monad (forever)
 import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
-
-import Network.JavaScript.Reactive(Event, eventIO, forkE, waitE, ThreadId)
 
 -- | This accepts WebSocket requests.
 --
@@ -40,7 +35,7 @@ import Network.JavaScript.Reactive(Event, eventIO, forkE, waitE, ThreadId)
 --
 -- listeners are added using the 'Engine' handle
 
-start :: (Event Value -> Engine -> IO ())
+start :: (EventChan -> Engine -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
@@ -51,8 +46,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   -- Handling packets
   nonceRef <- newTVarIO 0
   replyMap <- newTVarIO IM.empty
-  eventQueue <- newTQueueIO
-  events <- eventIO $ atomically $ readTQueue eventQueue
+  eventQueue <- newTChanIO
   
   let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
   _ <- forkIO $ catchMe $ forever $ do
@@ -70,10 +64,15 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                       $ IM.insert n
                       $ Left
                       $ obj
-      Just (Event event) -> atomically $ writeTQueue eventQueue event
+      Just (Event event) -> do
+        print ("Event!",event)
+        utc <- getCurrentTime
+        atomically $ writeTChan eventQueue (event,utc)
+        print ("Event ADDed",event)
+        
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
-  kE events $ Engine
+  kE (EventChan eventQueue) $ Engine
      { sendText = WS.sendTextData conn
      , genNonce = atomically $ do
          n <- readTVar nonceRef
@@ -119,20 +118,24 @@ bootstrap =   LT.unlines
    ,     "jsb.rs = [];"
    ]
 
--- | Add a listener for events. There can be many.
+-- | An Event is channel of timed Values.
+newtype EventChan = EventChan (TChan (Value,UTCTime))
+--
+-- | Add a listener for events. There can be many. non-blocking.
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-addListener :: Event Value -> (Value -> IO ()) -> IO ThreadId
-addListener events k = forkE k events
+addListener :: EventChan -> (Value -> IO ()) -> IO ThreadId
+addListener events k = forkIO $ forever $ listen events >>= k
 
--- | listen for an event. There may be more after, but only
---   on the returned Event, not on the original event.
+-- | 'listen' for the next event. blocking.
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-listen :: Event Value -> IO (Value, Event Value)
-listen = waitE
+--
+--
+listen :: EventChan -> IO Value
+listen (EventChan ec) = atomically $ fst <$> readTChan ec
 
 ------------------------------------------------------------------------------
 

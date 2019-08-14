@@ -243,7 +243,7 @@ table ts = go0 [] ts
 tag :: [Int] -> String
 tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 
-runTest :: Event Value -> Engine -> [Int] -> Test -> IO ()
+runTest :: EventChan -> Engine -> [Int] -> Test -> IO ()
 runTest ev e p (TestA txt k) = do
   recv <- doRecv ev e
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
@@ -255,13 +255,11 @@ runTest ev e p (TestM txt k) = do
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
 
-doRecv :: Event Value -> Engine -> IO (IO (Result Value))
-doRecv ev e = do
-  es <- newTChanIO
-  addListener ev $ atomically . writeTChan es
+doRecv :: JS.EventChan -> Engine -> IO (IO (Result Value))
+doRecv (JS.EventChan ec) e = do
   return $ do
         wait <- registerDelay $ 1000 * 1000
-        atomically $ (pure <$> readTChan es)
+        atomically $ (pure . fst <$> readTChan ec)
                      `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")        
 
 doTest :: (Applicative f, Command f) => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
@@ -283,8 +281,8 @@ doTest api@API{..} suff p k = do
        (command $ var progressBar <> ".classList.add('bg-danger')") *>
        (command $ var progressBar <> ".innerHTML=" <> value tm)       
        
-runTests :: Event Value -> Engine -> [Int] -> [Tests] -> IO ()
+runTests :: EventChan -> Engine -> [Int] -> [Tests] -> IO ()
 runTests ev e p ts = sequence_ [ runTest ev e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
 
-example :: Event Value -> Engine -> IO ()
+example :: EventChan -> Engine -> IO ()
 example ev e = runTests ev e  [] tests
