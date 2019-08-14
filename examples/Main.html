@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Example</title>
+  </head>
+  <body>
+    <h2>Example</h2>
+    <div id="target"></div>
+    <script>
+      // Bootstrap code
+      window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
+      jsb.ws.onmessage = (evt) => eval(evt.data);
+      // Debugging to JavaScript console
+      jsb.debug = true;
+      // Example-specific code
+      jsb.render = (t) => {
+	  document.querySelector('#target').innerHTML += t;
+      }
+    </script>
+  </body>
+</html>
