@@ -65,10 +65,8 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
                       $ Left
                       $ obj
       Just (Event event) -> do
-        print ("Event!",event)
         utc <- getCurrentTime
         atomically $ writeTChan eventQueue (event,utc)
-        print ("Event ADDed",event)
         
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
