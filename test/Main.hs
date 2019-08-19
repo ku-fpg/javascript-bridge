@@ -25,7 +25,7 @@ main_ i = do
         void $ forkIO $ scotty i $ do
 --          middleware $ logStdout
           
-          middleware $ start $ \ ev e -> example ev e `E.finally`
+          middleware $ start $ \ e -> example e `E.finally`
                        (do putMVar lock ()
                            putStrLn "Finished example")
 
@@ -243,23 +243,23 @@ table ts = go0 [] ts
 tag :: [Int] -> String
 tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 
-runTest :: EventChan -> Engine -> [Int] -> Test -> IO ()
-runTest ev e p (TestA txt k) = do
-  recv <- doRecv ev e
+runTest :: Engine -> [Int] -> Test -> IO ()
+runTest e p (TestA txt k) = do
+  recv <- doRecv e
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   aBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-a") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
   doTest (API (JS.sendA e) recv aBar) "-a" p k
-runTest ev e p (TestM txt k) = do
-  recv <- doRecv ev e
+runTest e p (TestM txt k) = do
+  recv <- doRecv e
   mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
 
-doRecv :: JS.EventChan -> Engine -> IO (IO (Result Value))
-doRecv (JS.EventChan ec) e = do
+doRecv :: Engine -> IO (IO (Result Value))
+doRecv e = do
   return $ do
         wait <- registerDelay $ 1000 * 1000
-        atomically $ (pure . fst <$> readTChan ec)
+        atomically $ (pure . fst <$> readEventChan e)
                      `orElse` (do b <- readTVar wait ; check b ; return $ Error "timeout!")        
 
 doTest :: (Applicative f, Command f) => API f -> String -> [Int] -> (API f -> IO (Maybe String)) -> IO ()
@@ -281,8 +281,8 @@ doTest api@API{..} suff p k = do
        (command $ var progressBar <> ".classList.add('bg-danger')") *>
        (command $ var progressBar <> ".innerHTML=" <> value tm)       
        
-runTests :: EventChan -> Engine -> [Int] -> [Tests] -> IO ()
-runTests ev e p ts = sequence_ [ runTest ev e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
+runTests :: Engine -> [Int] -> [Tests] -> IO ()
+runTests e p ts = sequence_ [ runTest e (m:n:p) t | (Tests _ ts,n) <- ts `zip` [0..], (t,m) <- ts `zip` [0..] ]
 
-example :: EventChan -> Engine -> IO ()
-example ev e = runTests ev e  [] tests
+example :: Engine -> IO ()
+example e = runTests e  [] tests

@@ -35,7 +35,7 @@ module Network.JavaScript
   , JavaScriptException(..)
   , addListener
   , listen
-  , EventChan(..)
+  , readEventChan
   -- * Web services
   , start
   , Engine

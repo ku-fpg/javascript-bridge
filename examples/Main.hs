@@ -23,8 +23,8 @@ main_ i = do
     get "/" $ file $ dataDir ++ "/examples/Main.html"
 
 
-app :: EventChan -> Engine -> IO ()
-app ev eng = do
+app :: Engine -> IO ()
+app eng = do
   send eng $ do
     command $ call "console.log" [string "starting..."]
     render "Hello!"

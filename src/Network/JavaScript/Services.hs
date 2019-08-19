@@ -6,9 +6,9 @@ module Network.JavaScript.Services
   ( -- * Web Services
     Engine(..)
   , start
-  , EventChan(..)
   , addListener
   , listen
+  , readEventChan
   , Application
   ) where
 
@@ -35,7 +35,7 @@ import qualified Data.IntMap.Strict as IM
 --
 -- listeners are added using the 'Engine' handle
 
-start :: (EventChan -> Engine -> IO ())
+start :: (Engine -> IO ())
       -> Application -> Application
 start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   conn <- WS.acceptRequest pc
@@ -70,7 +70,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
         
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
-  kE (EventChan eventQueue) $ Engine
+  kE $ Engine
      { sendText = WS.sendTextData conn
      , genNonce = atomically $ do
          n <- readTVar nonceRef
@@ -81,6 +81,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
          case IM.lookup n t of
            Nothing -> retry
            Just v -> return v
+     , eventChan = readTChan eventQueue
      }
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
@@ -88,6 +89,7 @@ data Engine = Engine
   { sendText :: LT.Text -> IO ()      -- send text to the JS engine
   , genNonce ::            IO Int     -- nonce generator
   , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
+  , eventChan ::           STM (Value, UTCTime)
   }
 
 bootstrap :: LT.Text
@@ -116,15 +118,13 @@ bootstrap =   LT.unlines
    ,     "jsb.rs = [];"
    ]
 
--- | An Event is channel of timed Values.
-newtype EventChan = EventChan (TChan (Value,UTCTime))
 --
 -- | Add a listener for events. There can be many. non-blocking.
 --
 --   From javascript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
-addListener :: EventChan -> (Value -> IO ()) -> IO ThreadId
-addListener events k = forkIO $ forever $ listen events >>= k
+addListener :: Engine -> (Value -> IO ()) -> IO ThreadId
+addListener e k = forkIO $ forever $ listen e >>= k
 
 -- | 'listen' for the next event. blocking.
 --
@@ -132,8 +132,17 @@ addListener events k = forkIO $ forever $ listen events >>= k
 --   values to this listener. Any valid JSON value can be sent.
 --
 --
-listen :: EventChan -> IO Value
-listen (EventChan ec) = atomically $ fst <$> readTChan ec
+listen :: Engine -> IO Value
+listen e = atomically $ fst <$> readEventChan e
+
+-- | 'readEventChan' uses STM to read the next event.
+--
+--   From javascript, you can call event(..) to send
+--   values to this channel. Any valid JSON value can be sent.
+--
+--
+readEventChan :: Engine -> STM (Value, UTCTime)
+readEventChan = eventChan
 
 ------------------------------------------------------------------------------
 

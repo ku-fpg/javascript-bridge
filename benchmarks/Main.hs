@@ -27,7 +27,7 @@ fib m | m < 0     = error "negative!"
 -- Our benchmark harness.
 main = do
         scotty 3000 $ do
-          middleware $ start $ \ _ e -> test e `E.finally`
+          middleware $ start $ \ e -> test e `E.finally`
                        (putStrLn "Finished example")
 
           get "/" $ do
@@ -35,7 +35,6 @@ main = do
                [ "<body>"
                ,   "<h1>JavaScript Performance Tests</h1>"
                ,   "<div id='cursor'>"
-                 -- Include this code in your page
                ,   "<script>"
                ,     "jsb = new WebSocket('ws://' + location.host + '/');"
                ,     "jsb.onmessage = (evt) => eval(evt.data);"               
