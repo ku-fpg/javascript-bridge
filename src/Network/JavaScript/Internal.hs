@@ -6,8 +6,10 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# OPTIONS_GHC -w #-}
 module Network.JavaScript.Internal
-  ( -- * Commands
-    Command()
+  ( -- * JavaScript
+    JavaScript(..)
+    -- * Commands
+  , Command()
   , internalCommand
   , internalConstructor
   , internalFunction
@@ -32,16 +34,29 @@ module Network.JavaScript.Internal
 import           Data.Aeson (ToJSON(..), FromJSON(..))
 import qualified Data.Aeson.Encoding.Internal as AI
 import qualified Data.Binary.Builder as B
-import           Data.Monoid ((<>))
+import           Data.Semigroup
 import           Data.Text.Lazy(Text, pack)
 import           Data.Text.Lazy.Encoding(encodeUtf8)
-
+import           Data.String
 
 ------------------------------------------------------------------------------
 
+newtype JavaScript = JavaScript Text
+  deriving Show
+
+instance IsString JavaScript where
+  fromString = JavaScript . fromString
+  
+instance Semigroup JavaScript where
+  JavaScript x <> JavaScript y = JavaScript $ x <> y
+  
+instance Monoid JavaScript where
+  mempty = JavaScript mempty
+  mappend = (<>)
+
 class Command f where
-  internalCommand :: Text -> f ()
-  internalConstructor :: Text -> f (RemoteValue a)
+  internalCommand :: JavaScript -> f ()
+  internalConstructor :: JavaScript -> f (RemoteValue a)
   internalFunction :: (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
 
            -> f (RemoteValue (a -> IO b))
@@ -49,7 +64,7 @@ class Command f where
 --               -> f (RemoteValue (a -> IO ()))
 
 class Procedure f where
-  internalProcedure :: FromJSON a => Text -> f a
+  internalProcedure :: FromJSON a => JavaScript -> f a
   
 -- | Deep embedding of an applicative packet
 newtype Packet a = Packet (AF Primitive a)
@@ -60,9 +75,9 @@ newtype RemoteMonad a = RemoteMonad (M Primitive a)
   deriving (Functor, Applicative, Monad)
 
 data Primitive :: * -> * where
-  Command   :: Text -> Primitive ()
-  Procedure :: FromJSON a => Text -> Primitive a
-  Constructor :: Text -> Primitive (RemoteValue a)
+  Command   :: JavaScript -> Primitive ()
+  Procedure :: FromJSON a => JavaScript -> Primitive a
+  Constructor :: JavaScript -> Primitive (RemoteValue a)
   Function :: (RemoteValue (a -> IO b) -> RemoteValue a -> Packet (RemoteValue b))
            -> Primitive (RemoteValue (a -> IO b))
 
@@ -90,13 +105,15 @@ data RemoteValue a = RemoteValue Int
 -- Remote values can not be encoded in JSON, but are JavaScript variables.
 instance ToJSON (RemoteValue a) where
   toJSON = error "toJSON not supported for RemoteValue"
-  toEncoding = AI.unsafeToEncoding . B.fromLazyByteString . encodeUtf8 . var
-
+  toEncoding rv = AI.unsafeToEncoding $ B.fromLazyByteString $ encodeUtf8 txt
+    where
+      JavaScript txt = var rv
+      
 -- | generate the text for a RemoteValue. They can be used as assignment
 --   targets as well, but exposes the JavaScript scoping semantics.
-var :: RemoteValue a -> Text
-var (RemoteValue n) = "jsb.rs[" <> pack (show n) <> "]"
-var (RemoteArgument n) = "a" <> pack (show n)
+var :: RemoteValue a -> JavaScript
+var (RemoteValue n) = JavaScript $ "jsb.rs[" <> pack (show n) <> "]"
+var (RemoteArgument n) = JavaScript $ "a" <> pack (show n)
 
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad

@@ -246,13 +246,13 @@ tag p = "tag" ++ concatMap (\ a -> '-' : show a) p
 runTest :: Engine -> [Int] -> Test -> IO ()
 runTest e p (TestA txt k) = do
   recv <- doRecv e
-  mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
-  aBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-a") <> "')"
+  mBar <- JS.send e $ constructor $ JavaScript $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
+  aBar <- JS.send e $ constructor $ JavaScript $ "document.getElementById('" <> T.pack (tag p ++ "-a") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
   doTest (API (JS.sendA e) recv aBar) "-a" p k
 runTest e p (TestM txt k) = do
   recv <- doRecv e
-  mBar <- JS.send e $ constructor $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
+  mBar <- JS.send e $ constructor $ JavaScript $ "document.getElementById('" <> T.pack (tag p ++ "-m") <> "')"
   doTest (API (JS.send e) recv mBar)  "-m" p k
 
 doRecv :: Engine -> IO (IO (Result Value))

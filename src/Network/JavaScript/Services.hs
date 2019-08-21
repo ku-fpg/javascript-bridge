@@ -26,6 +26,8 @@ import Control.Concurrent.STM
 import Data.Aeson (Value(..), decode', FromJSON(..),withObject,(.:))
 import qualified Data.IntMap.Strict as IM
 
+import Network.JavaScript.Internal(JavaScript(..))
+
 -- | This accepts WebSocket requests.
 --
 --     * All server->client requests are of type 'Text', and are evalued.
@@ -71,7 +73,7 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
       Nothing -> print ("bad (non JSON) reply from JavaScript"::String,d)
 
   kE $ Engine
-     { sendText = WS.sendTextData conn
+     { sendJavaScript = \ (JavaScript js) -> WS.sendTextData conn js
      , genNonce = atomically $ do
          n <- readTVar nonceRef
          writeTVar nonceRef $ succ n
@@ -86,10 +88,10 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
 
 -- | An 'Engine' is a handle to a specific JavaScript engine
 data Engine = Engine
-  { sendText :: LT.Text -> IO ()      -- send text to the JS engine
-  , genNonce ::            IO Int     -- nonce generator
-  , replyBox :: Int     -> IO (Either Value [Value]) -- reply mailbox
-  , eventChan ::           STM (Value, UTCTime)
+  { sendJavaScript :: JavaScript -> IO ()      -- send text to the JS engine
+  , genNonce       ::               IO Int     -- nonce generator
+  , replyBox       :: Int        -> IO (Either Value [Value]) -- reply mailbox
+  , eventChan      ::               STM (Value, UTCTime)
   }
 
 bootstrap :: LT.Text

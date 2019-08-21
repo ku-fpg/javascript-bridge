@@ -9,6 +9,7 @@ module Network.JavaScript
   ( -- * Remote Applicative Packets of JavaScript
     Command()
   , Procedure()
+  , JavaScript(..)
   , Packet
   , RemoteMonad
   , command
@@ -72,7 +73,7 @@ import Network.JavaScript.Services
 
 -- | 'command' statement to execute in JavaScript. ';' is not needed as a terminator.
 --   Should never throw an exception, which may be reported to console.log.
-command :: Command f => Text -> f ()
+command :: Command f => JavaScript -> f ()
 command = internalCommand
   
 -- | 'constructor' expression to execute in JavaScript. ';' is not needed as a terminator.
@@ -85,7 +86,7 @@ command = internalCommand
 --
 --   The first type argument is the phantom type of the 'RemoteValue', so that
 --   type application can be used to specify the type.
-constructor :: forall a f . Command f => Text -> f (RemoteValue a)
+constructor :: forall a f . Command f => JavaScript-> f (RemoteValue a)
 constructor = internalConstructor
 
 -- | a 'function' takes a Haskell function, and converts
@@ -93,10 +94,16 @@ constructor = internalConstructor
 --   generate first-class functions, for passing as arguments.
 --
 --   TODO: generalize to Monad.
+-- TODO: this is always Packet?
+
 function :: forall a b f . Command f => (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
 
            -> f (RemoteValue (a -> IO b))
 function = internalFunction
+
+--fix :: forall a b f . Command f => (forall g . (Command g, Applicative g) => RemoteValue a -> g (RemoteValue a))
+--       -> f (RemoteValue a)
+--fix = undefined
 
 -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
 --   Should never throw an exception, but any exceptions are returned to the 'send'
@@ -108,7 +115,7 @@ function = internalFunction
 --  If a procedure throws an exception, future commands and procedures in
 --  the same packet will not be executed. Use promises to allow all commands and
 --  procedures to be invoked, if needed.
-procedure :: forall a f . (Procedure f, FromJSON a) => Text -> f a
+procedure :: forall a f . (Procedure f, FromJSON a) => JavaScript -> f a
 procedure = internalProcedure
 
 as :: (FromJSON a, Procedure g) => (forall f . Command f => f (RemoteValue a)) -> g a
@@ -197,9 +204,9 @@ sendAE e@Engine{..} (Packet af) = prepareStmtA genNonce af >>= sendStmtA e
 -- a remote effect, including result.
 
 data Stmt a where
-  CommandStmt   :: Text -> Stmt ()
-  ProcedureStmt :: FromJSON a => Int -> Text -> Stmt a
-  ConstructorStmt :: RemoteValue a -> Text -> Stmt (RemoteValue a)
+  CommandStmt   :: JavaScript -> Stmt ()
+  ProcedureStmt :: FromJSON a => Int -> JavaScript -> Stmt a
+  ConstructorStmt :: RemoteValue a -> JavaScript -> Stmt (RemoteValue a)
 
 deriving instance Show (Stmt a)
   
@@ -226,12 +233,13 @@ prepareStmt ug (Function k) = do
       let funWrapper xs = "function(" <> var a0 <> "){" <> xs <> "return " <> value a <> ";}"
       return $ ConstructorStmt (RemoteValue j)
              $ funWrapper
-             $ serializeA ss
+             $ showStmtA ss
    
-showStmtA :: AF Stmt a -> Text
-showStmtA = LT.concat . concatAF (return . showStmt)
+showStmtA :: AF Stmt a -> JavaScript
+showStmtA stmts = JavaScript
+                $ LT.concat [ js | JavaScript js <- concatAF (return . showStmt) stmts ]
 
-showStmt :: Stmt a -> Text
+showStmt :: Stmt a -> JavaScript
 showStmt (CommandStmt cmd)     = cmd <> ";"
 showStmt (ProcedureStmt n cmd) = "var " <> procVar n <> "=" <> cmd <> ";"
 showStmt (ConstructorStmt rv cmd) = var rv <> "=" <> cmd <> ";"
@@ -250,20 +258,17 @@ evalStmt (ProcedureStmt _ _)   = do
     _ -> fail "not enough values"
 evalStmt (ConstructorStmt c _) = pure c
 
-serializeA :: AF Stmt a -> Text
-serializeA = LT.concat . concatAF (return . showStmt)
-
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
 sendStmtA e (PureAF a) = return (pure a)
 sendStmtA e af
     | null assignments = do
-        sendText e $ serializeA af
+        sendJavaScript e $ showStmtA af
         return $ case evalStmtA af [] of
             Nothing -> error "internal failure"
             Just r -> Right r        
     | otherwise = do
         nonce <- genNonce e
-        sendText e $ catchMe nonce $ serializeA af
+        sendJavaScript e $ catchMe nonce $ showStmtA af
         theReply <- replyBox e nonce
         case theReply of
           Right replies -> return $ case evalStmtA af replies of
@@ -272,9 +277,11 @@ sendStmtA e af
           Left err -> return $ Left err
         
   where
-    catchMe :: Int -> Text -> Text
+    catchMe :: Int -> JavaScript -> JavaScript
     catchMe nonce txt =
-      "try{" <> txt <> "}catch(err){jsb.error(" <> LT.pack (show nonce) <> ",err);};" <>
+      "try{" <> txt
+             <> "}catch(err){jsb.error(" <> JavaScript (LT.pack (show nonce))
+             <> ",err);};" <>
       reply nonce <> ";"
 
     assignments :: [Int]
@@ -285,16 +292,16 @@ sendStmtA e af
     findAssign _ = Nothing
     
     -- generate the call to reply (as a final command)
-    reply :: Int -> Text
-    reply n =
+    reply :: Int -> JavaScript
+    reply n = JavaScript $
       "jsb.reply(" <> LT.intercalate ","
       [ LT.pack (show n)
-      , "[" <> LT.intercalate "," (map procVar assignments) <> "]"
+      , "[" <> LT.intercalate "," [ x | JavaScript x <- map procVar assignments] <> "]"
       ] <> ")"
 
 -- TODO: Consider a wrapper around this Int
-procVar :: Int -> Text
-procVar n = "v" <> LT.pack (show n)
+procVar :: Int -> JavaScript
+procVar n = JavaScript $ "v" <> LT.pack (show n)
 
 ------------------------------------------------------------------------------
 
@@ -307,17 +314,17 @@ localize :: Procedure f => RemoteValue a -> f Value
 localize = procedure . var
 
 -- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
-value :: ToJSON v => v -> Text
-value = decodeUtf8 . encode
+value :: ToJSON v => v -> JavaScript
+value = JavaScript . decodeUtf8 . encode
 
 -- | Generate JavaScript number
-number :: Double -> Text
+number :: Double -> JavaScript
 number = value
 
 -- | Generate (quoted) JavaScript string
-string :: Text -> Text
+string :: Text -> JavaScript
 string = value
 
 -- | generate a function call
-call :: Text -> [Text] -> Text
-call fn args = fn <> "(" <> LT.intercalate "," args <> ")"
+call :: JavaScript -> [JavaScript] -> JavaScript
+call fn args = fn <> "(" <> JavaScript (LT.intercalate "," [ js | JavaScript js <- args ]) <> ")"
