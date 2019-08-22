@@ -15,7 +15,6 @@ module Network.JavaScript
   , command
   , procedure
   , constructor
-  , sync
   , localize
   , unlocalize
     -- * sending Packets
@@ -100,14 +99,6 @@ constructor = internalConstructor
 --  procedures to be invoked, if needed.
 procedure :: forall a f . (Procedure f, FromJSON a) => JavaScript -> f a
 procedure = internalProcedure
-
-as :: (FromJSON a, Procedure g) => (forall f . Command f => f (RemoteValue a)) -> g a
-as (Packet (PrimAF (Constructor cmd))) = procedure cmd
--- is@Int $ command "fooo"
-
--- | A sync will always flush the send queue.
-sync :: (Monad f, Procedure f) => f ()
-sync = procedure "null" >>= \ Null -> return ()
 
 ------------------------------------------------------------------------------
 
