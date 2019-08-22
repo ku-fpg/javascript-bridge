@@ -60,13 +60,23 @@ test-suite javascript-bridge-test
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
 
-
-executable jsb-example
+executable javascript-bridge-simple
   main-is:             Main.hs
   other-modules:       Paths_javascript_bridge
   build-depends:       base                 >= 4.9 && < 4.14
                      , javascript-bridge
                      , scotty               == 0.11.*
+  hs-source-dirs:      examples
+  default-language:    Haskell2010
+  ghc-options:         -threaded -Wall
+
+executable javascript-bridge-examples
+  main-is:             Multi.hs
+  other-modules:       Paths_javascript_bridge
+  build-depends:       base                 >= 4.9 && < 4.14
+                     , javascript-bridge
+                     , scotty               == 0.11.*
+                     , text                 >= 1.2 && < 1.3
   hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall

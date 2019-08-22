@@ -1,8 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies #-}
-
 
 module Main where
 
@@ -22,7 +18,6 @@ main_ i = do
     middleware $ start app  
     get "/" $ file $ dataDir ++ "/examples/Main.html"
 
-
 app :: Engine -> IO ()
 app eng = do
   send eng $ do
@@ -33,5 +28,3 @@ app eng = do
 -- you are using as typed Haskell functions.
 render :: Command f => String -> f ()
 render t = command $ call "jsb.render" [value t]
-    
- 
