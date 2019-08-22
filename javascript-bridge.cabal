@@ -1,5 +1,5 @@
 name:                javascript-bridge
-version:             0.1
+version:             0.2.0
 synopsis:            Remote Monad for JavaScript on the browser
 description:         Bridge from Haskell to JavaScript on the browser
 license:             BSD3

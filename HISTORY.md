@@ -9,8 +9,8 @@ replacing the comet design pattern based kansas-comet.
     - support Justin Dawson's Blank Canvas and Remote Monad work
     - direct remote monad / remote applicative support
  - Reworked in 2019 to
-    - use Conal's Event implementation for JavaScript events
-    - use STM as the underlying timing mechanism for Future
+    - use finally tagless
+    - other improvements and clean up
  
 Authors, contributors, or sponsors:
   Andy Gill
@@ -18,7 +18,6 @@ Authors, contributors, or sponsors:
   Google Inc.
     - (Andy Gill works at Google, so his contributions to this library during
        his employment comply with Google's open source patching policy)
-  Conal Elliott gave permission to use his Push-Pull code under BSD
   This work is supported by the National Science Foundation CAREER #1350901.
 
 Other authors or contributors are welcome!
