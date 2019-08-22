@@ -289,10 +289,10 @@ number = value
 string :: Text -> JavaScript
 string = value
 
--- | generate a function call
+-- | Generate a function call
 call :: JavaScript -> [JavaScript] -> JavaScript
 call fn args = fn <> "(" <> JavaScript (LT.intercalate "," [ js | JavaScript js <- args ]) <> ")"
 
--- | send an event back to Haskell
+-- | Send an event back to Haskell
 event :: ToJSON v => v -> JavaScript
 event v = call "jsb.event" [value v]
