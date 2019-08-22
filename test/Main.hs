@@ -165,7 +165,7 @@ tests =
     ]
   , Tests "Events"
     [ TestA "event" $ \ API{..} -> do
-        send $ command ("jsb.event('Hello, World')");        
+        send $ command $ event ("Hello, World" :: String)
         event <- recv
         assert event (Success $ toJSON ("Hello, World" :: String))
     ]

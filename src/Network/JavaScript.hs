@@ -31,6 +31,7 @@ module Network.JavaScript
   , number
   , string
     -- * Events
+  , event
   , JavaScriptException(..)
   , addListener
   , listen
@@ -291,3 +292,7 @@ string = value
 -- | generate a function call
 call :: JavaScript -> [JavaScript] -> JavaScript
 call fn args = fn <> "(" <> JavaScript (LT.intercalate "," [ js | JavaScript js <- args ]) <> ")"
+
+-- | send an event back to Haskell
+event :: ToJSON v => v -> JavaScript
+event v = call "jsb.event" [value v]
