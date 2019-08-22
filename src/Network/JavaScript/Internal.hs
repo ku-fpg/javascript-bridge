@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# OPTIONS_GHC -w #-}
+
 module Network.JavaScript.Internal
   ( -- * JavaScript
     JavaScript(..)
