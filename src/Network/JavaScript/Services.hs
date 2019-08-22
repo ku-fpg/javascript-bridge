@@ -53,7 +53,6 @@ start kE = WS.websocketsOr WS.defaultConnectionOptions $ \ pc -> do
   let catchMe m = try m >>= \ (_ :: Either SomeException ()) -> return ()
   _ <- forkIO $ catchMe $ forever $ do
     d <- WS.receiveData conn
-    print d
     case decode' d of
       Just (Result _ []) -> return ()
       Just (Result n replies) -> atomically
