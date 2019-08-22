@@ -19,6 +19,7 @@ module Network.JavaScript
   , sync
   , localize
 --  , continuation
+  , unlocalize
     -- * sending Packets
   , send
   , sendA
@@ -312,6 +313,10 @@ delete rv = command $ "delete " <> var rv
 -- | 'localize' brings a remote value into Haskell.
 localize :: Procedure f => RemoteValue a -> f Value
 localize = procedure . var
+
+-- | 'unlocalize' sends a local value to JavaScript.
+unlocalize :: Command f => Value -> f (RemoteValue a)
+unlocalize = constructor . value
 
 -- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
 value :: ToJSON v => v -> JavaScript
