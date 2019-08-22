@@ -70,15 +70,37 @@ applet eng Constructors = do
     n :: Int <- procedure $ var o <> ".n"
     render $ show n
 applet eng Promises = do
-  print "start..."
   send eng $ do
-    p <- procedure $
+    -- When a promise is returned by a procedure,
+    -- then we wait for it to resolve.
+    p1 <- procedure $
       "new Promise((resolve,reject) => {" <>
-      "  setTimeout(() => { resolve('Done')}, 1000)"  <>
+      "  setTimeout(() => { resolve('Done p1')}, 1000)"  <>
       "})"
-    render $ show (p :: String)
-  print "done"
-      
+    render $ show (p1 :: String)
+  send eng $ do
+    -- When we group return values, we wait for all
+    -- promises to resolve before returning to Haskell.
+    -- Internally, this uses Promises.all()
+    (p2,p3) <- (,) <$>
+       (procedure $
+         "new Promise((resolve,reject) => {" <>
+          "  setTimeout(() => { resolve('Done p2')}, 1000)"  <>
+          "})") <*>
+       (procedure $
+         "new Promise((resolve,reject) => {" <>
+          "  setTimeout(() => { resolve('Done p3')}, 500)"  <>
+          "})")
+    render $ show (p2 :: String, p3 :: String)
+  send eng $ do
+    -- constructors create remote handles, and the
+    -- handle can be a promise, and is constructed
+    -- immeduately.
+    p2 <- constructor $
+      "new Promise((resolve,reject) => {" <>
+      "  setTimeout(() => { resolve('Done p4')}, 1000)"  <>
+      "})"
+    command $ var p2 <> ".then((v) => { jsb.render(JSON.stringify(v)) })"
 
     
 -- It is good practice to reflect the JavaScript utilties
