@@ -60,11 +60,11 @@ class Command f where
 class Procedure f where
   internalProcedure :: FromJSON a => JavaScript -> f a
   
--- | Deep embedding of an applicative packet
+-- | The Remote Applicative Packet
 newtype Packet a = Packet (AF Primitive a)
   deriving (Functor, Applicative)
 
--- | Deep embedding of an applicative packet
+-- | The Remote Monad
 newtype RemoteMonad a = RemoteMonad (M Primitive a)
   deriving (Functor, Applicative, Monad)
 
@@ -118,14 +118,14 @@ instance Applicative (AF m) where
   pure = PureAF
   (<*>) = ApAF
 
-concatAF :: (forall a . m a -> Maybe b) -> AF m a -> [b]
-concatAF f (PureAF _) = []
+concatAF :: (forall x . m x -> Maybe b) -> AF m a -> [b]
+concatAF _ (PureAF _) = []
 concatAF f (PrimAF p) = case f p of
   Nothing -> []
   Just r -> [r]
 concatAF f (ApAF m1 m2) = concatAF f m1 ++ concatAF f m2
 
-evalAF :: Applicative f => (forall a . m a -> f a) -> AF m a -> f a
+evalAF :: Applicative f => (forall x . m x -> f x) -> AF m a -> f a
 evalAF _ (PureAF a) = pure a
 evalAF f (PrimAF p) = f p
 evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
@@ -148,7 +148,7 @@ instance Monad (M m) where
   (>>=) = BindM
   (>>) = (*>)
 
-evalM :: Monad f => (forall a . m a -> f a) -> M m a -> f a
+evalM :: Monad f => (forall x . m x -> f x) -> M m a -> f a
 evalM _ (PureM a) = pure a
 evalM f (PrimM p) = f p
 evalM f (ApM g h) = evalM f g <*> evalM f h

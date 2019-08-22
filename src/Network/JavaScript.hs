@@ -4,35 +4,36 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# OPTIONS_GHC -w #-}
+
 module Network.JavaScript
-  ( -- * Remote Applicative Packets of JavaScript
-    Command()
-  , Procedure()
+  (  -- * Sending Remote Monads and Packets
+    send
+  , sendA
+  , sendE
+    -- * Building Remote Monads and Packets
   , JavaScript(..)
-  , Packet
-  , RemoteMonad
   , command
   , procedure
   , constructor
-  , localize
-  , unlocalize
-    -- * sending Packets
-  , send
-  , sendA
-  , sendE
-    -- * Remote and Local Values
+    -- * Remote Applicative and Monads, and classes for building them
+  , Packet
+  , RemoteMonad
+  , Command()
+  , Procedure()
+    -- * Remote Values
   , RemoteValue
   , delete
-    -- * Text builders
+  , localize
+  , remote
+    -- * JavaScript builders
   , var
   , value
   , call
   , number
   , string
     -- * Events
-  , event
   , JavaScriptException(..)
+  , event
   , addListener
   , listen
   , readEventChan
@@ -42,27 +43,16 @@ module Network.JavaScript
   , Application
   ) where
 
-import Control.Applicative((<|>),liftA2)
-import Control.Exception(Exception)
-import Control.Exception as Exception
+import Control.Applicative(liftA2)
+import Control.Exception(Exception, throwIO)
 import Data.Monoid ((<>))
 import qualified Data.Text.Lazy as LT
 import Data.Text.Lazy (Text)
-import qualified Network.Wai.Handler.WebSockets as WS
 import Network.Wai (Application)
-import qualified Network.WebSockets as WS
 import Control.Monad.Trans.State.Strict
 
-import Control.Concurrent (forkIO)
-import Control.Exception (try, SomeException)
-import Control.Monad (forever)
-import Control.Concurrent.STM
-import Data.Aeson ( Value(..), decode', FromJSON(..),withObject,(.:)
-                  , ToJSON(..), encode, Result(..), fromJSON)
-import Data.Text.Lazy.Encoding(decodeUtf8,encodeUtf8)
-import qualified Data.Aeson.Encoding.Internal as AI
-import qualified Data.Binary.Builder as B
-import qualified Data.IntMap.Strict as IM
+import Data.Aeson ( Value(..), FromJSON(..), ToJSON(..), encode, Result(..), fromJSON)
+import Data.Text.Lazy.Encoding(decodeUtf8)
 
 
 import Network.JavaScript.Internal
@@ -103,6 +93,10 @@ procedure = internalProcedure
 
 ------------------------------------------------------------------------------
 
+-- | 'send' a remote monad for execution on a JavaScript engine.
+--  The monad may be split into several packets for transmission
+-- and exection.
+
 send :: Engine -> RemoteMonad a -> IO a
 send e p = do
   r <- sendE e p
@@ -115,8 +109,9 @@ data JavaScriptException = JavaScriptException Value
 
 instance Exception JavaScriptException
 
+-- | 'send' with all JavaScript exceptions caught and returned.
 sendE :: Engine -> RemoteMonad a -> IO (Either Value a)
-sendE e (RemoteMonad m) = go m
+sendE e (RemoteMonad rm) = go rm
   where
     go m = do
       w <- walkStmtM e m
@@ -157,12 +152,13 @@ walkStmtM e          (BindM m k) = do
       case w2 of
         ResultPacket h_af h_r ->
           return $ ResultPacket (m_af *> h_af) h_r
-        IntermPacket h_af k -> return $
-          IntermPacket (m_af *> h_af) k
+        IntermPacket h_af k' -> return $
+          IntermPacket (m_af *> h_af) k'
     ResultPacket m_af Nothing ->
           return $ IntermPacket m_af k
     IntermPacket m_af k0 -> return $ IntermPacket m_af (\ r -> k0 r >>= k)
 
+-- | send an (applicative) 'Packet'. This packet always sent atomically to JavaScript.
 sendA :: Engine -> Packet a -> IO a
 sendA e p = do
   r <- sendAE e p
@@ -191,7 +187,7 @@ prepareStmtA ug (PrimAF p) = PrimAF <$> prepareStmt ug p
 prepareStmtA ug (ApAF g h) = ApAF <$> prepareStmtA ug g <*> prepareStmtA ug h
 
 prepareStmt :: Monad f => f Int -> Primitive a -> f (Stmt a)
-prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
+prepareStmt _ (Command stmt)     = pure $ CommandStmt stmt
 prepareStmt ug (Procedure stmt)   = ug >>= \ i -> pure $ ProcedureStmt i stmt
 prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
    
@@ -219,7 +215,7 @@ evalStmt (ProcedureStmt _ _)   = do
 evalStmt (ConstructorStmt c _) = pure c
 
 sendStmtA :: Engine -> AF Stmt a -> IO (Either Value a)
-sendStmtA e (PureAF a) = return (pure a)
+sendStmtA _ (PureAF a) = return (pure a)
 sendStmtA e af
     | null assignments = do
         sendJavaScript e $ showStmtA af
@@ -273,11 +269,11 @@ delete rv = command $ "delete " <> var rv
 localize :: Procedure f => RemoteValue a -> f Value
 localize = procedure . var
 
--- | 'unlocalize' sends a local value to JavaScript.
-unlocalize :: Command f => Value -> f (RemoteValue a)
-unlocalize = constructor . value
+-- | 'remote' sends a local value to JavaScript.
+remote :: Command f => Value -> f (RemoteValue a)
+remote = constructor . value
 
--- | Generate the 'Text' for a JavaScript value, including 'RemoteValue'.
+-- | Generate a 'JavaScript' value, including for 'RemoteValue''s.
 value :: ToJSON v => v -> JavaScript
 value = JavaScript . decodeUtf8 . encode
 

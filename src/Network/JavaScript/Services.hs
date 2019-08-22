@@ -28,14 +28,8 @@ import qualified Data.IntMap.Strict as IM
 
 import Network.JavaScript.Internal(JavaScript(..))
 
--- | This accepts WebSocket requests.
---
---     * All server->client requests are of type 'Text', and are evalued.
---     * All client->server requests are of type 'Value'.
---     * Any client->server requests that are are an Object,
---       with a tag called 'jsb', are used to denode procedural replies.
---
--- listeners are added using the 'Engine' handle
+-- | This accepts WebSocket requests, calls the callback with
+--   an 'Engine' that can be used to access JavaScript.
 
 start :: (Engine -> IO ())
       -> Application -> Application
@@ -122,14 +116,14 @@ bootstrap = LT.unlines
 --
 -- | Add a listener for events. There can be many. non-blocking.
 --
---   From javascript, you can call event(..) to send
+--   From JavaScript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
 addListener :: Engine -> (Value -> IO ()) -> IO ThreadId
 addListener e k = forkIO $ forever $ listen e >>= k
 
 -- | 'listen' for the next event. blocking.
 --
---   From javascript, you can call event(..) to send
+--   From JavaScript, you can call event(..) to send
 --   values to this listener. Any valid JSON value can be sent.
 --
 --
@@ -138,7 +132,7 @@ listen e = atomically $ fst <$> readEventChan e
 
 -- | 'readEventChan' uses STM to read the next event.
 --
---   From javascript, you can call event(..) to send
+--   From JavaScript, you can call event(..) to send
 --   values to this channel. Any valid JSON value can be sent.
 --
 --
