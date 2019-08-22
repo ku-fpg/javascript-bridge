@@ -43,7 +43,9 @@ Finally, there is a way of sending events from JavaScript,
 then listening for the event in Haskell.
 
 ```Haskell
-  do send eng $ command "jsb.event('Hello!')"
+  do -- Have JavaScript send an event to Haskell
+     send eng $ command $ "event('Hello!')"
+     -- Have Haskell wait for the event
      e :: String <- listen eng
      print e
 ```
