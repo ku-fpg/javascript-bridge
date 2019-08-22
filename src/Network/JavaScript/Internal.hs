@@ -12,7 +12,6 @@ module Network.JavaScript.Internal
   , Command()
   , internalCommand
   , internalConstructor
-  , internalFunction
     -- * Procedures
   , Procedure()
   , internalProcedure
@@ -57,11 +56,6 @@ instance Monoid JavaScript where
 class Command f where
   internalCommand :: JavaScript -> f ()
   internalConstructor :: JavaScript -> f (RemoteValue a)
-  internalFunction :: (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
-
-           -> f (RemoteValue (a -> IO b))
---  aContinuation :: (forall g . (Command g, Procedure g, Monad g) => RemoteValue a -> g ())
---               -> f (RemoteValue (a -> IO ()))
 
 class Procedure f where
   internalProcedure :: FromJSON a => JavaScript -> f a
@@ -78,13 +72,10 @@ data Primitive :: * -> * where
   Command   :: JavaScript -> Primitive ()
   Procedure :: FromJSON a => JavaScript -> Primitive a
   Constructor :: JavaScript -> Primitive (RemoteValue a)
-  Function :: (RemoteValue (a -> IO b) -> RemoteValue a -> Packet (RemoteValue b))
-           -> Primitive (RemoteValue (a -> IO b))
 
 instance Command Packet where
   internalCommand = Packet . PrimAF . Command  
   internalConstructor = Packet . PrimAF . Constructor
-  internalFunction k = Packet $ PrimAF $ Function k
 
 instance Procedure Packet where
   internalProcedure = Packet . PrimAF . Procedure
@@ -92,7 +83,6 @@ instance Procedure Packet where
 instance Command RemoteMonad where
   internalCommand = RemoteMonad . PrimM . Command  
   internalConstructor = RemoteMonad . PrimM . Constructor
-  internalFunction k = RemoteMonad $ PrimM $ Function k
 
 instance Procedure RemoteMonad where
   internalProcedure = RemoteMonad . PrimM . Procedure

@@ -15,10 +15,8 @@ module Network.JavaScript
   , command
   , procedure
   , constructor
-  , function
   , sync
   , localize
---  , continuation
   , unlocalize
     -- * sending Packets
   , send
@@ -87,24 +85,8 @@ command = internalCommand
 --
 --   The first type argument is the phantom type of the 'RemoteValue', so that
 --   type application can be used to specify the type.
-constructor :: forall a f . Command f => JavaScript-> f (RemoteValue a)
+constructor :: forall a f . Command f => JavaScript -> f (RemoteValue a)
 constructor = internalConstructor
-
--- | a 'function' takes a Haskell function, and converts
---   it into a JavaScript function. This can be used to 
---   generate first-class functions, for passing as arguments.
---
---   TODO: generalize to Monad.
--- TODO: this is always Packet?
-
-function :: forall a b f . Command f => (forall g . (Command g, Applicative g) => RemoteValue (a -> IO b) -> RemoteValue a -> g (RemoteValue b))
-
-           -> f (RemoteValue (a -> IO b))
-function = internalFunction
-
---fix :: forall a b f . Command f => (forall g . (Command g, Applicative g) => RemoteValue a -> g (RemoteValue a))
---       -> f (RemoteValue a)
---fix = undefined
 
 -- | 'procedure' expression to execute in JavaScript. ';' is not needed as a terminator.
 --   Should never throw an exception, but any exceptions are returned to the 'send'
@@ -220,21 +202,6 @@ prepareStmt :: Monad f => f Int -> Primitive a -> f (Stmt a)
 prepareStmt ug (Command stmt)     = pure $ CommandStmt stmt
 prepareStmt ug (Procedure stmt)   = ug >>= \ i -> pure $ ProcedureStmt i stmt
 prepareStmt ug (Constructor stmt) = ug >>= \ i -> pure $ ConstructorStmt (RemoteValue i) stmt
-prepareStmt ug (Function k) = do
-  i <- ug
-  j <- ug
-  let a0 = RemoteArgument i
-  let Packet f = k (RemoteValue j) a0
-  ss <- prepareStmtA ug $ f 
-  case evalStmtA ss [] of
-    Nothing -> error "procedure inside function (should never happen)"
-    Just a -> do
-      -- Technically, we can handle a single procedure,
-      -- as the final primitive, but using return (..the prim..).
-      let funWrapper xs = "function(" <> var a0 <> "){" <> xs <> "return " <> value a <> ";}"
-      return $ ConstructorStmt (RemoteValue j)
-             $ funWrapper
-             $ showStmtA ss
    
 showStmtA :: AF Stmt a -> JavaScript
 showStmtA stmts = JavaScript

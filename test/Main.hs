@@ -163,12 +163,6 @@ tests =
         v :: Either JavaScriptException Value <- E.try $ send $ procedure $ "(function(){throw 'Command Fail';})()"
         assert v (Left $ JavaScriptException $ String "Command Fail")
     ]
-  , Tests "Functions"
-    [ TestA "function $ id" $ \ API{..} -> do
-        rv :: RemoteValue (Int -> IO Int) <- send $ function $ \ _ v -> pure v
-        v :: Int <- send $ procedure (var rv <> "(4)");
-        assert v (4 :: Int)
-    ]
   , Tests "Events"
     [ TestA "event" $ \ API{..} -> do
         send $ command ("jsb.event('Hello, World')");        
