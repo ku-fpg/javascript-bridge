@@ -17,6 +17,7 @@ data Applets
   = Commands
   | Procedures
   | Constructors
+  | Promises
   deriving (Eq, Ord, Show, Read, Enum, Bounded)
 
 
@@ -68,6 +69,17 @@ applet eng Constructors = do
     command $ var o <> ".n++"
     n :: Int <- procedure $ var o <> ".n"
     render $ show n
+applet eng Promises = do
+  print "start..."
+  send eng $ do
+    p <- procedure $
+      "new Promise((resolve,reject) => {" <>
+      "  setTimeout(() => { resolve('Done')}, 1000)"  <>
+      "})"
+    render $ show (p :: String)
+  print "done"
+      
+
     
 -- It is good practice to reflect the JavaScript utilties
 -- you are using as typed Haskell functions.
