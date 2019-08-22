@@ -94,7 +94,7 @@ data Engine = Engine
   }
 
 bootstrap :: LT.Text
-bootstrap =   LT.unlines
+bootstrap = LT.unlines
    [     "jsb.event =  function(ev) {"
    ,     "         if (jsb.debug) { console.log('event',{event: ev}); }"
    ,     "         jsb.ws.send(JSON.stringify({event: ev}));"
