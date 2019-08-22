@@ -88,8 +88,7 @@ instance Procedure RemoteMonad where
   internalProcedure = RemoteMonad . PrimM . Procedure
 
 -- A Local handle into a remote value.
-data RemoteValue a = RemoteValue Int
-                   | RemoteArgument Int
+newtype RemoteValue a = RemoteValue Int
   deriving (Eq, Ord, Show)
 
 -- Remote values can not be encoded in JSON, but are JavaScript variables.
@@ -103,7 +102,6 @@ instance ToJSON (RemoteValue a) where
 --   targets as well, but exposes the JavaScript scoping semantics.
 var :: RemoteValue a -> JavaScript
 var (RemoteValue n) = JavaScript $ "jsb.rs[" <> pack (show n) <> "]"
-var (RemoteArgument n) = JavaScript $ "a" <> pack (show n)
 
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad
