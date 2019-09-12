@@ -55,12 +55,12 @@ Bootstrapping the connection is straightforward.
 First, use a `middleware` to setup the (Haskell) server.
 
 ```Haskell
-import qualified Network.JavaScript
+import Network.JavaScript
 
         ...
         scotty 3000 $ do
           middleware $ start app
-	  ...
+          ...
 
 app :: Engine -> IO ()
 app eng = send eng $ command "console.log('Hello!')"
@@ -71,7 +71,7 @@ Next, include the following fragment in your HTML code.
 ```HTML
     <script>
         window.jsb = {ws: new WebSocket('ws://' + location.host)};
-	jsb.ws.onmessage = (evt) => eval(evt.data);
+        jsb.ws.onmessage = (evt) => eval(evt.data);
     </script>
 ```
 
