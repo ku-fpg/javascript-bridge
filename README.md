@@ -13,9 +13,9 @@ using a remote monad.
 **javascript-bridge** remotely executes JavaScript *fragments*.
 The basic Haskell idiom is.
 ```Haskell
-  send eng $ command "console.log('Hello!')"
+     send eng $ command "console.log('Hello!')"
 ```
-where `send` is an `IO` function that sends a commands for remote exection,
+where `send` is an `IO` function that sends a commands for remote execution,
 `eng` is a handle into a specific JavaScript engine,
 and `command` is a command builder.
 
@@ -43,7 +43,7 @@ then listening for the event in Haskell.
 
 ```Haskell
   do -- Have JavaScript send an event to Haskell
-     send eng $ command $ "event('Hello!')"
+     send eng $ command $ event ('Hello!'::String)"
      -- Have Haskell wait for the event, which is an Aeson 'Value'.
      e :: Value <- listen eng
      print e
@@ -55,15 +55,15 @@ Bootstrapping the connection is straightforward.
 First, use a `middleware` to setup the (Haskell) server.
 
 ```Haskell
-import qualified Network.JavaScript as JS
+import qualified Network.JavaScript
 
         ...
         scotty 3000 $ do
-          middleware $ JS.start app
+          middleware $ start app
 	  ...
 
 app :: Engine -> IO ()
-app = send eng $ command "console.log('Hello!')"
+app eng = send eng $ command "console.log('Hello!')"
 ```
 
 Next, include the following fragment in your HTML code.
