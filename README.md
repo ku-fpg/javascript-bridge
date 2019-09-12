@@ -2,12 +2,12 @@
 
 **javascript-bridge** is an easy way of calling JavaScript from
 Haskell, using web-sockets as the underlying transport
-mechanism. Conceptually, javascript-bridge works be giving
-Haskellacccess to the JavaScript `eval` function.  However, using a
-remote monad, we support evaluation of JavaScript fragments, calling
-and returning values from JavaScript functions, constructing
-and using remote objects, and sending events from JavaScript
-to Haskell.
+mechanism. Conceptually, javascript-bridge gives Haskell acccess to
+the JavaScript `eval` function.  However, using a remote monad, as
+well as supporting evaluation of JavaScript fragments, we also support
+calling and returning values from JavaScript functions, constructing
+and using remote objects, and sending events from JavaScript to
+Haskell.
 
 # High-level overview of API
 
