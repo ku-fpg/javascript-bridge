@@ -33,7 +33,6 @@ module Network.JavaScript.Internal
 import           Data.Aeson (ToJSON(..), FromJSON(..))
 import qualified Data.Aeson.Encoding.Internal as AI
 import qualified Data.Binary.Builder as B
-import           Data.Semigroup
 import           Data.Text.Lazy(Text, pack)
 import           Data.Text.Lazy.Encoding(encodeUtf8)
 import           Data.String

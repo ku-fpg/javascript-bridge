@@ -10,7 +10,7 @@
     <div id="target"></div>
     <script>
       // Bootstrap code
-      window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};
+      window.jsb = {ws: new WebSocket('ws://' + location.host)};
       jsb.ws.onmessage = (evt) => eval(evt.data);
       // Debugging to JavaScript console
       jsb.debug = true;

@@ -1,15 +1,14 @@
 # javascript-bridge [![Build Status](https://img.shields.io/travis/ku-fpg/javascript-bridge.svg?style=flat)](https://travis-ci.org/ku-fpg/javascript-bridge)
 
-**javascript-bridge** is an easy way of calling JavaScript from
-Haskell, using web-sockets as the underlying transport
+**javascript-bridge** is a straightforward way of calling JavaScript
+from Haskell, using web-sockets as the underlying transport
 mechanism. Conceptually, javascript-bridge gives Haskell acccess to
-the JavaScript `eval` function.  However, using a remote monad, as
-well as supporting evaluation of JavaScript fragments, we also support
-calling and returning values from JavaScript functions, constructing
-and using remote objects, and sending events from JavaScript to
-Haskell.
+the JavaScript `eval` function.  However, we also support calling and
+returning values from JavaScript functions, constructing and using
+remote objects, and sending events from JavaScript to Haskell, all
+using a remote monad.
 
-# High-level overview of API
+# Overview of API
 
 **javascript-bridge** remotely executes JavaScript *fragments*.
 The basic Haskell idiom is.
@@ -45,8 +44,8 @@ then listening for the event in Haskell.
 ```Haskell
   do -- Have JavaScript send an event to Haskell
      send eng $ command $ "event('Hello!')"
-     -- Have Haskell wait for the event
-     e :: String <- listen eng
+     -- Have Haskell wait for the event, which is an Aeson 'Value'.
+     e :: Value <- listen eng
      print e
 ```
 
@@ -67,13 +66,12 @@ app :: Engine -> IO ()
 app = send eng $ command "console.log('Hello!')"
 ```
 
-Next, include the following fragment in your HTML code,
-replacing *localhost* with your web address.
+Next, include the following fragment in your HTML code.
 
 ```HTML
     <script>
-        jsb = new WebSocket('ws://localhost:3000/');
-        jsb.onmessage = function(evt){ eval(evt.data);};
+        window.jsb = {ws: new WebSocket('ws://' + location.host)};
+	jsb.ws.onmessage = (evt) => eval(evt.data);
     </script>
 ```
 

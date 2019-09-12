@@ -56,7 +56,7 @@ main_ i = do
                , T.pack (table tests)
                , "</div>"
                ,   "<script>"
-               ,     "window.jsb = {ws: new WebSocket('ws://' + location.host + '/')};"
+               ,     "window.jsb = {ws: new WebSocket('ws://' + location.host)};"
                ,     "jsb.ws.onmessage = (evt) => eval(evt.data);"
                     -- remote object to allow interesting commands and procedures
                ,     "var remote = [];"

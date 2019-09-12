@@ -94,7 +94,7 @@ applet eng Promises = do
     render $ show (p2 :: String, p3 :: String)
   send eng $ do
     -- constructors create remote handles, and the
-    -- handle can be a promise, and is constructed
+    -- handle can be a promise, and is returned
     -- immeduately.
     p2 <- constructor $
       "new Promise((resolve,reject) => {" <>
