@@ -13,10 +13,11 @@ cabal-version:       >=1.10
 tested-with:         GHC == 8.4.4
                    , GHC == 8.6.5
                    , GHC == 8.8.1
+                   , GHC == 8.10.1
 
 executable javascript-bridge-benchmarks
   ghc-options:    -Wall -O2 -rtsopts
-  build-depends:       base                 >= 4.11    && < 4.14
+  build-depends:       base                 >= 4.11    && < 4.15
                      , javascript-bridge
                      , binary               >= 0.8     && < 0.9
                      , aeson                >= 1.0     && < 1.5
