@@ -33,6 +33,7 @@ module Network.JavaScript.Internal
 import           Data.Aeson (ToJSON(..), FromJSON(..))
 import qualified Data.Aeson.Encoding.Internal as AI
 import qualified Data.Binary.Builder as B
+import           Data.Kind (Type)
 import           Data.Text.Lazy(Text, pack)
 import           Data.Text.Lazy.Encoding(encodeUtf8)
 import           Data.String
@@ -44,10 +45,10 @@ newtype JavaScript = JavaScript Text
 
 instance IsString JavaScript where
   fromString = JavaScript . fromString
-  
+
 instance Semigroup JavaScript where
   JavaScript x <> JavaScript y = JavaScript $ x <> y
-  
+
 instance Monoid JavaScript where
   mempty = JavaScript mempty
   mappend = (<>)
@@ -58,7 +59,7 @@ class Command f where
 
 class Procedure f where
   internalProcedure :: FromJSON a => JavaScript -> f a
-  
+
 -- | The Remote Applicative Packet
 newtype Packet a = Packet (AF Primitive a)
   deriving (Functor, Applicative)
@@ -67,20 +68,20 @@ newtype Packet a = Packet (AF Primitive a)
 newtype RemoteMonad a = RemoteMonad (M Primitive a)
   deriving (Functor, Applicative, Monad)
 
-data Primitive :: * -> * where
+data Primitive :: Type -> Type where
   Command   :: JavaScript -> Primitive ()
   Procedure :: FromJSON a => JavaScript -> Primitive a
   Constructor :: JavaScript -> Primitive (RemoteValue a)
 
 instance Command Packet where
-  internalCommand = Packet . PrimAF . Command  
+  internalCommand = Packet . PrimAF . Command
   internalConstructor = Packet . PrimAF . Constructor
 
 instance Procedure Packet where
   internalProcedure = Packet . PrimAF . Procedure
 
 instance Command RemoteMonad where
-  internalCommand = RemoteMonad . PrimM . Command  
+  internalCommand = RemoteMonad . PrimM . Command
   internalConstructor = RemoteMonad . PrimM . Constructor
 
 instance Procedure RemoteMonad where
@@ -96,7 +97,7 @@ instance ToJSON (RemoteValue a) where
   toEncoding rv = AI.unsafeToEncoding $ B.fromLazyByteString $ encodeUtf8 txt
     where
       JavaScript txt = var rv
-      
+
 -- | generate the text for a RemoteValue. They can be used as assignment
 --   targets as well, but exposes the JavaScript scoping semantics.
 var :: RemoteValue a -> JavaScript
@@ -105,14 +106,14 @@ var (RemoteValue n) = JavaScript $ "jsb.rs[" <> pack (show n) <> "]"
 ------------------------------------------------------------------------------
 -- Framework types for Applicative and Monad
 
-data AF :: (* -> *) -> * -> * where
+data AF :: (Type -> Type) -> Type -> Type where
  PureAF :: a -> AF m a
  PrimAF :: m a -> AF m a
  ApAF :: AF m (a -> b) -> AF m a -> AF m b
 
 instance Functor (AF m) where
   fmap f g = pure f <*> g
-  
+
 instance Applicative (AF m) where
   pure = PureAF
   (<*>) = ApAF
@@ -129,7 +130,7 @@ evalAF _ (PureAF a) = pure a
 evalAF f (PrimAF p) = f p
 evalAF f (ApAF g h) = evalAF f g <*> evalAF f h
 
-data M :: (* -> *) -> * -> * where
+data M :: (Type -> Type) -> Type -> Type where
  PureM :: a -> M m a
  PrimM :: m a -> M m a
  ApM :: M m (a -> b) -> M m a -> M m b
@@ -137,7 +138,7 @@ data M :: (* -> *) -> * -> * where
 
 instance Functor (M m) where
   fmap f g = pure f <*> g
-  
+
 instance Applicative (M m) where
   pure = PureM
   (<*>) = ApM
