@@ -1,4 +1,4 @@
-# javascript-bridge [![Build Status](https://img.shields.io/travis/ku-fpg/javascript-bridge.svg?style=flat)](https://travis-ci.org/ku-fpg/javascript-bridge)
+# javascript-bridge [![Build Status](https://github.com/ku-fpg/javascript-bridge/workflows/Haskell-CI/badge.svg)](https://github.com/ku-fpg/javascript-bridge/actions?query=workflow%3AHaskell-CI)
 
 **javascript-bridge** is a straightforward way of calling JavaScript
 from Haskell, using web-sockets as the underlying transport
