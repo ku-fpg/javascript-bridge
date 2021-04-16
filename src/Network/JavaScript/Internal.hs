@@ -144,7 +144,7 @@ instance Applicative (M m) where
   (<*>) = ApM
 
 instance Monad (M m) where
-  return = PureM
+  return = pure
   (>>=) = BindM
   (>>) = (*>)
 
