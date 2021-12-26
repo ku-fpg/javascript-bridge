@@ -33,7 +33,7 @@ library
                      , aeson                >= 1.4     && < 2.1
                      , containers           >= 0.5     && < 0.7
                      , stm                  >= 2.4     && < 2.6
-                     , text                 >= 1.2     && < 1.3
+                     , text                 >= 1.2     && < 2.1
                      , time                 >= 1.6     && < 1.11
                      , transformers         >= 0.4     && < 0.6
                      , wai                  >= 3.2     && < 3.3
@@ -52,7 +52,7 @@ test-suite javascript-bridge-test
                      , scotty               >= 0.11 && < 0.13
                      , wai-extra            >= 3.0  && < 3.2
                      , stm                  >= 2.4  && < 2.6
-                     , text                 >= 1.2  && < 1.3
+                     , text                 >= 1.2  && < 2.1
                      , time                 >= 1.6  && < 1.11
   hs-source-dirs:      test
   default-language:    Haskell2010
@@ -74,7 +74,7 @@ executable javascript-bridge-examples
   build-depends:       base                 >= 4.11 && < 4.16
                      , javascript-bridge
                      , scotty               >= 0.11 && < 0.13
-                     , text                 >= 1.2 && < 1.3
+                     , text                 >= 1.2 && < 2.1
   hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
