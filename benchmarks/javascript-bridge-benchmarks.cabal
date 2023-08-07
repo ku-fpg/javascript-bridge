@@ -21,7 +21,7 @@ tested-with:         GHC == 8.4.4
 
 executable javascript-bridge-benchmarks
   ghc-options:    -Wall -O2 -rtsopts
-  build-depends:       base                 >= 4.11    && < 4.19
+  build-depends:       base                 >= 4.11    && < 4.20
                      , javascript-bridge
                      , binary               >= 0.8     && < 0.9
                      , aeson                >= 1.0     && < 2.3
