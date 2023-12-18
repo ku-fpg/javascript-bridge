@@ -27,7 +27,7 @@ executable javascript-bridge-benchmarks
                      , aeson                >= 1.0     && < 2.3
                      , containers           >= 0.5     && < 0.8
                      , criterion            >= 1.1     && < 1.7
-                     , scotty               >= 0.11    && < 0.21
+                     , scotty               >= 0.11    && < 0.22
                      , free                 >= 4.12    && < 5.3
                      , scientific           >= 0.3.4.9 && < 0.4
                      , stm                  >= 2.4     && < 2.6
