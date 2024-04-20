@@ -21,7 +21,7 @@ tested-with:         GHC == 8.4.4
 
 executable javascript-bridge-benchmarks
   ghc-options:    -Wall -O2 -rtsopts
-  build-depends:       base                 >= 4.11    && < 4.20
+  build-depends:       base                 >= 4.11    && < 4.21
                      , javascript-bridge
                      , binary               >= 0.8     && < 0.9
                      , aeson                >= 1.0     && < 2.3
@@ -36,7 +36,7 @@ executable javascript-bridge-benchmarks
                      , unordered-containers >= 0.2.7   && < 0.3
                      , wai                  >= 3.2     && < 3.3
                      , wai-websockets       >= 3.0.1   && < 3.1
-                     , websockets           >= 0.10    && < 0.13
+                     , websockets           >= 0.10    && < 0.14
   main-is: Main.hs
 --  hs-source-dirs: ..
 --  other-modules:     Network.JavaScript,
