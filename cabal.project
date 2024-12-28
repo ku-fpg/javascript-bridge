@@ -1,5 +1,15 @@
 packages: .
           ./benchmarks
 
--- Workaround until https://github.com/jaspervdj/websockets/pull/254 is merged
-allow-newer: websockets:containers
+-- TODO: Remove this once the ecosystem has caught up with GHC 9.12
+allow-newer:
+  aeson:ghc-prim,
+  aeson:template-haskell,
+  binary-orphans:base,
+  indexed-traversable:base,
+  indexed-traversable-instances:base,
+  integer-conversion:base,
+  microstache:base,
+  semialign:base,
+  these:base,
+  uuid-types:template-haskell
