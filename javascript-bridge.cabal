@@ -80,7 +80,6 @@ executable javascript-bridge-examples
   build-depends:       base                 >= 4.11 && < 4.22
                      , javascript-bridge
                      , scotty               >= 0.11 && < 0.23
-                     , text                 >= 1.2 && < 2.2
   hs-source-dirs:      examples
   default-language:    Haskell2010
   ghc-options:         -threaded -Wall
