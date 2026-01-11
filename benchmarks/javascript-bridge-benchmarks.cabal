@@ -21,10 +21,11 @@ tested-with:         GHC == 8.4.4
                    , GHC == 9.8.4
                    , GHC == 9.10.3
                    , GHC == 9.12.2
+                   , GHC == 9.14.1
 
 executable javascript-bridge-benchmarks
   ghc-options:    -Wall -O2 -rtsopts
-  build-depends:       base                 >= 4.11    && < 4.22
+  build-depends:       base                 >= 4.11    && < 4.23
                      , javascript-bridge
                      , aeson                >= 1.0     && < 2.3
                      , criterion            >= 1.1     && < 1.7
